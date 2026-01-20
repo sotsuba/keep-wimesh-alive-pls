@@ -1,0 +1,38 @@
+# Build artifacts
+/target/
+
+# Generated files
+wimesh.service
+
+# Local config and secrets
+/config.toml
+/.env
+
+# Private keys and certs
+*.pem
+*.key
+
+# Logs
+*.log
+bash_log.txt
+
+# Python cache (legacy)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

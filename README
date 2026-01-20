@@ -1,0 +1,142 @@
+WIMESH - WI-MESH AUTO LOGIN
+===========================
+
+A Rust daemon that automatically handles Wi-MESH captive portal authentication.
+
+IMPORTANT: This tool is specifically designed for the "1.Free Wi-MESH" network
+at HCMC National University Dormitory - Zone B. It may not work
+with other Wi-MESH networks or captive portals.
+
+Tested successfully on Fedora Linux 43 (x86_64).
+
+
+
+REPOSITORY STRUCTURE
+====================
+
+The repository is structured as follows:
+
+  src/                
+    main.rs           
+    config.rs             
+    http.rs               
+    models.rs             
+    parser.rs             
+    utils.rs              
+    portal/               
+      awing.rs            
+      mod.rs              
+  config.toml             This is where you put config.toml
+  config.example.toml     Example configuration file.
+  run.sh                  
+  install.sh              Systemd service installation script.
+  uninstall.sh            Systemd service removal script.
+  service.sh              Service management wrapper.
+  wimesh.service.template 
+
+
+PREREQUISITES
+-------------
+
+  - Linux with systemd (for service installation).
+  - NetworkManager (nmcli command for WiFi status).
+  - Rust and Cargo (stable).
+
+This project is Linux-only due to dependencies on nmcli and systemd.
+Windows support would require replacing:
+  - nmcli → netsh wlan show interfaces
+  - systemd → Windows services or scheduled tasks
+  - Linux paths → Windows paths
+
+
+
+BUILD AND CONFIGURATION
+=======================
+
+Do not overcomplicate this. It is a standard Cargo project.
+
+  $ cargo build --release
+
+The resulting binary will be in `target/release/wimesh`.
+
+<< config.toml >>
+The system expects a `config.toml` file in the working directory. Copy from
+`config.example.toml` and edit as needed.
+
+Template (for Dormitory Area B, National University - Ho Chi Minh City):
+  [global]
+  check_interval = 5
+
+  [http]
+  timeout = 10
+  connect_timeout = 5
+  max_retries = 3
+
+  [logging]
+  level = "info"
+  log_file = ""
+
+  [[portals]]
+  name = "KTX Khu B"
+  type = "awing"
+  ssids = ["1.Free Wi-MESH", "Free Wi-MESH 1"]
+  mac_address = ""
+
+
+
+DAEMON & AUTOMATION
+===================
+
+You can run it manually, but you probably shouldn't unless you are debugging.
+
+  Usage:
+    wimesh [OPTIONS]
+
+  Options:
+    -d, --daemon         Run in daemon mode (continuous monitoring)
+    -c, --config <FILE>  Config file path
+    -h, --help           Print help
+
+In daemon mode, the software handles automatic connection monitoring,
+reconnection upon internet loss, and exponential backoff on failure.
+
+<< systemd >>
+If you want this to persist across reboots, use systemd. I have provided
+scripts to automate this because writing unit files manually is tedious.
+
+  $ sudo ./install.sh
+  $ sudo systemctl start wimesh
+  $ sudo systemctl enable wimesh
+
+To see what the daemon is doing:
+  $ journalctl -u wimesh -f
+
+
+
+HOW TO BLAME MY CODE
+====================
+
+If the binary fails to run, check permissions. If the config fails to load,
+check `ls -la config.toml`. If the network fails, check `nmcli`.
+
+If you find a bug, a memory leak, or a logic error that offends you, feel
+free to submit a Pull Request.
+
+Workflow:
+  1. Fork the repository.
+  2. Create a feature branch:
+     $ git checkout -b fix-broken-auth
+  3. Fix the code. Ensure it actually compiles.
+  4. Write a brief explanation in your commit message explaining why the
+     original logic was garbage.
+  5. Push and open a Pull Request.
+
+I will review your "blame" and merge it if it is technically superior.
+Don't beg for permissions. Just send the patch.
+
+
+
+LICENSE
+-------
+
+No license specified. Personal use only. Use at your own risk.

@@ -1,0 +1,36 @@
+[Unit]
+Description=Wimesh Auto-Login Service
+Documentation=https://github.com/sotsuba/wimesh
+After=network-online.target NetworkManager.service
+Wants=network-online.target
+ConditionPathExists=WIMESH_BINARY_PATH
+
+[Service]
+Type=simple
+User=WIMESH_USER
+Group=WIMESH_GROUP
+WorkingDirectory=WIMESH_WORKDIR
+
+# Run wimesh in daemon mode
+ExecStart=WIMESH_BINARY_PATH --daemon
+
+# Restart policy
+Restart=on-failure
+RestartSec=10
+StartLimitInterval=300
+StartLimitBurst=5
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=wimesh
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=WIMESH_WORKDIR
+
+[Install]
+WantedBy=multi-user.target

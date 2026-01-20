@@ -1,0 +1,20 @@
+# Example Wimesh Configuration File
+# Copy to `config.toml` and edit as needed for your environment.
+
+[global]
+check_interval = 5
+
+[http]
+timeout = 10
+connect_timeout = 5
+max_retries = 3
+
+[logging]
+level = "info"
+log_file = ""
+
+[[portals]]
+name = "KTX Khu B"
+type = "awing"
+ssids = ["1.Free Wi-MESH", "Free Wi-MESH 1"]
+mac_address = ""
