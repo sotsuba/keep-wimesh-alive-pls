@@ -1,0 +1,21 @@
+[Unit]
+Description=WiMesh captive portal ping watchdog
+After=network-online.target NetworkManager.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStartPre=/bin/sleep 5
+ExecStart=/usr/local/bin/wimesh_ping_check.sh
+Restart=always
+RestartSec=10s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=wimesh-ping
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/log /tmp
+PrivateTmp=no
+
+[Install]
+WantedBy=multi-user.target
