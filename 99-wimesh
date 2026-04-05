@@ -1,0 +1,55 @@
+#!/bin/bash
+# NetworkManager dispatcher script for keep_wimesh_session
+# Install: sudo cp 99-wimesh /etc/NetworkManager/dispatcher.d/
+#          sudo chmod 755 /etc/NetworkManager/dispatcher.d/99-wimesh
+#          sudo chown root:root /etc/NetworkManager/dispatcher.d/99-wimesh
+
+IFACE="$1"
+EVENT="$2"
+
+# --- Configuration ---
+TARGET_SSID="1.Free Wi-MESH"            # change to your hotspot SSID
+BINARY="/usr/local/bin/keep_wimesh_session"
+LOCKFILE="/tmp/wimesh_login.lock"
+LOGFILE="/var/log/wimesh_login.log"
+# ---------------------
+
+# Only act on wireless interfaces
+[[ "$CONNECTION_TYPE" == "802-11-wireless" ]] || exit 0
+
+# Trigger on interface up or connectivity-change to captive portal / no internet
+case "$EVENT" in
+    up|connectivity-change) ;;
+    *) exit 0 ;;
+esac
+
+# Check SSID matches
+if [[ "$CONNECTION_ID" != "$TARGET_SSID" ]]; then
+    exit 0
+fi
+
+# For connectivity-change: only act when not fully connected
+if [[ "$EVENT" == "connectivity-change" ]]; then
+    case "$CONNECTIVITY_STATE" in
+        portal|limited|none) ;;
+        *) exit 0 ;;
+    esac
+fi
+
+# Prevent overlapping runs
+if [[ -f "$LOCKFILE" ]]; then
+    PID=$(cat "$LOCKFILE" 2>/dev/null)
+    if kill -0 "$PID" 2>/dev/null; then
+        echo "$(date -Iseconds) already running (pid $PID), skipping" >> "$LOGFILE"
+        exit 0
+    fi
+fi
+
+echo $$ > "$LOCKFILE"
+trap 'rm -f "$LOCKFILE"' EXIT
+
+echo "$(date -Iseconds) event=$EVENT iface=$IFACE ssid=$CONNECTION_ID connectivity=${CONNECTIVITY_STATE:-?}" >> "$LOGFILE"
+
+"$BINARY" >> "$LOGFILE" 2>&1
+STATUS=$?
+echo "$(date -Iseconds) binary exited with status $STATUS" >> "$LOGFILE"
