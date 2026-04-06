@@ -26,7 +26,7 @@ log "watchdog started (pid $$)"
 
 while true; do
     if ping -c 1 -W 1 "$INTERNET_HOST" &>/dev/null; then
-        : # internet OK — no log to avoid 17k lines/day
+        : # internet OK — no log needed
     elif ping -c 1 -W 1 "$PORTAL_HOST" &>/dev/null; then
         log "session expired — running login binary"
         "$BINARY" >> "$LOGFILE" 2>&1
