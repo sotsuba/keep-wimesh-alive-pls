@@ -2,6 +2,11 @@
 
 Công cụ sẽ thực hiện các bước đăng nhập lằng nhằng vào `Free WiMesh` dùm bạn tại KTX Khu B - ĐHQG TP.HCM.
 
+Hostspot được hỗ trợ:
+
+- `Free-WiMesh` tại KTX Khu B.
+- `HCMUS-STUDENT` tại CS2.
+
 ## Miễn trừ trách nhiệm
 Công cụ này được viết ra nhằm tự động hóa quy trình đăng nhập và bỏ qua quảng cáo của hệ thống WiMesh. Việc sử dụng tool có thể coi là hành vi lách quy trình vận hành thông thường của nhà cung cấp dịch vụ.
 
