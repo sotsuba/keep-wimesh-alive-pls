@@ -14,7 +14,7 @@ Công cụ này được viết ra nhằm tự động hóa quy trình đăng nh
 
 ```bash
 cargo build --release
-./target/release/keep_wimesh_session
+./target/release/keep_wimesh_session 1.Free-WiMesh
 ```
 
 ## Cài đặt tự động
@@ -33,3 +33,29 @@ sudo ./uninstall.sh
 ```
 
 > Chỉnh `TARGET_SSID` trong `99-wimesh` thành tên wifi nếu cần (mặc định `1.Free WiMesh`).
+
+## Tinh chinh watchdog service
+
+`wimesh-ping.service` + `wimesh_ping_check.sh` ho tro da SSID theo co che:
+
+- Neu set `WIMESH_SSID`, script se dung SSID nay (override).
+- Neu khong set, script tu dong lay SSID dang ket noi qua NetworkManager.
+- Script chi thu login voi SSID khop regex `WIMESH_SUPPORTED_SSID_REGEX` (mac dinh: `WiMesh|HCMUS-STUDENT|HCMUS-PUBLIC`).
+
+Co the override cac bien moi truong trong service:
+
+```ini
+Environment=WIMESH_CHECK_URL=http://connectivitycheck.gstatic.com/generate_204
+Environment=WIMESH_SSID=
+Environment=WIMESH_SUPPORTED_SSID_REGEX=(WiMesh|HCMUS-STUDENT|HCMUS-PUBLIC)
+Environment=WIMESH_RETRY_BASE_SECONDS=10
+Environment=WIMESH_RETRY_MAX_SECONDS=120
+```
+
+Sau khi sua service:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart wimesh-ping
+sudo journalctl -u wimesh-ping -f
+```

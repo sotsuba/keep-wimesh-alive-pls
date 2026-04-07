@@ -6,7 +6,7 @@ use tracing::{info, warn};
 
 pub fn select_strategy(config: &super::config::Config) -> Option<Box<dyn LoginStrategy>> {
     match config.ssid.as_str() {
-        x if x.contains("Wi-MESH") => {
+        x if x.contains("WiMesh") => {
             info!("Selected strategy: KTX Wi-Mesh");
             Some(Box::new(ktx_wimesh::KtxWiMeshStrategy))
         },

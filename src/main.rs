@@ -28,6 +28,7 @@ async fn main() -> Result<()> {
         .redirect(Policy::limited(10))
         .timeout(Duration::from_secs(20))
         .user_agent(config::USER_AGENT_FIREFOX)
+        .danger_accept_invalid_certs(true) 
         .build()
         .context("failed to construct HTTP client")?;
 

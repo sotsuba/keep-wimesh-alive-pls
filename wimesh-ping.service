@@ -6,6 +6,10 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStartPre=/bin/sleep 5
+Environment=WIMESH_CHECK_URL=http://connectivitycheck.gstatic.com/generate_204
+Environment=WIMESH_SUPPORTED_SSID_REGEX=(WiMesh|HCMUS-STUDENT|HCMUS-PUBLIC)
+Environment=WIMESH_RETRY_BASE_SECONDS=10
+Environment=WIMESH_RETRY_MAX_SECONDS=120
 ExecStart=/usr/local/bin/wimesh_ping_check.sh
 Restart=always
 RestartSec=7s
@@ -16,6 +20,7 @@ NoNewPrivileges=yes
 ProtectSystem=strict
 ReadWritePaths=/var/log /tmp
 PrivateTmp=no
+ProtectKernelLogs=no
 
 [Install]
 WantedBy=multi-user.target

@@ -49,21 +49,16 @@ async fn step_probe_and_get_login_cookies(
 ) -> Result<(HotspotCookies, String)> {
     info!("step1+2+3: probe, load hotspot, and request awing URL");
 
-    let (probe_html, probe_headers) = match client.get("http://login.net.vn/").send().await {
-        Ok(resp) => {
-            let headers = resp.headers().clone();
-            let body = resp.text().await.context("failed reading probe response")?;
-            (body, Some(headers))
-        }
-        Err(err) => {
-            warn!("probe failed ({err}); using logs/probe_sample_output.txt");
-            (
-                std::fs::read_to_string("logs/probe_sample_output.txt")
-                    .context("failed to read logs/probe_sample_output.txt")?,
-                None,
-            )
-        }
-    };
+    let probe_response = client
+        .get("http://login.net.vn/")
+        .send()
+        .await
+        .context("probe request to login.net.vn failed")?;
+    let probe_headers = Some(probe_response.headers().clone());
+    let probe_html = probe_response
+        .text()
+        .await
+        .context("failed reading probe response")?;
 
     let first_wifi = parse_wifi_info(&probe_html)?;
     let login_url = first_wifi
@@ -96,17 +91,24 @@ async fn step_probe_and_get_login_cookies(
         .unwrap_or_else(|| first_wifi.mac.replace(':', "").to_uppercase());
 
     let check_captive = pick_cookie("checkCaptive");
-    let hotspot_wm_device_id = pick_cookie("hotspot_wm_deviceId").unwrap_or_else(|| {
-        warn!("hotspot_wm_deviceId cookie missing; using derived device id from MAC");
-        derived_device_id.clone()
-    });
+    let hotspot_wm_device_id = pick_cookie("hotspot_wm_deviceId").unwrap_or_else(|| derived_device_id.clone());
     let hotspot_wm_token = pick_cookie("hotspot_wm_token");
 
+    let mut missing_optional_cookies = Vec::new();
     if check_captive.is_none() {
-        warn!("checkCaptive cookie missing; continuing without it");
+        missing_optional_cookies.push("checkCaptive");
+    }
+    if hotspot_wm_device_id == derived_device_id {
+        missing_optional_cookies.push("hotspot_wm_deviceId");
     }
     if hotspot_wm_token.is_none() {
-        warn!("hotspot_wm_token cookie missing; continuing without it");
+        missing_optional_cookies.push("hotspot_wm_token");
+    }
+    if !missing_optional_cookies.is_empty() {
+        info!(
+            "optional-cookie fallback mode: missing [{}], using MAC-derived device id when needed",
+            missing_optional_cookies.join(",")
+        );
     }
 
     let cookies = HotspotCookies {
