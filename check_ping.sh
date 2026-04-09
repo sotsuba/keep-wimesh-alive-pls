@@ -8,9 +8,8 @@ readonly LOGFILE="/var/log/wimesh_ping.log"
 readonly LOCKFILE="/tmp/wimesh_ping.lock"
 
 readonly CHECK_URL="${WIMESH_CHECK_URL:-http://connectivitycheck.gstatic.com/generate_204}"
-readonly SUPPORTED_SSID_REGEX="${WIMESH_SUPPORTED_SSID_REGEX:-(WiMesh|HCMUS-STUDENT|HCMUS-PUBLIC)}"
 
-readonly CHECK_INTERVAL=3
+readonly CHECK_INTERVAL=5
 readonly POST_LOGIN_WAIT=5
 readonly RETRY_BASE_SECONDS="${WIMESH_RETRY_BASE_SECONDS:-10}"
 readonly RETRY_MAX_SECONDS="${WIMESH_RETRY_MAX_SECONDS:-120}"
@@ -25,14 +24,12 @@ LOGIN_FAIL_COUNT=0
 # FUNCTIONS
 # ==============================================================================
 log() {
-  # %()T lấy thời gian hiện tại
   printf '%(%Y-%m-%dT%H:%M:%S%z)T %s\n' -1 "$*" >> "$LOGFILE"
 }
 
 probe_connectivity() {
   local gateway http_code rc
 
-  # 1. Kiểm tra mạng cục bộ (LAN)
   gateway=$(ip -4 route show default | awk '/default/ {print $3; exit}')
   if [[ -z "$gateway" ]]; then
     PROBE_LAST_ERR="no_gateway"
@@ -44,7 +41,6 @@ probe_connectivity() {
     return 1
   fi
 
-  # 2. Kiểm tra Internet hoặc nhận diện Captive Portal
   http_code="$(curl -4 --silent --connect-timeout 2 --max-time 4 --output /dev/null \
     --write-out '%{http_code}' --proto '=http' "$CHECK_URL" 2>/dev/null)"
   rc=$?
@@ -62,7 +58,6 @@ probe_connectivity() {
     fi
   fi
 
-  # 3. Phân loại lỗi mạng từ Curl
   case "$rc" in
     6)  PROBE_LAST_ERR="dns_blocked_by_portal" ;;
     7)  PROBE_LAST_ERR="connect_refused" ;;
@@ -140,8 +135,6 @@ main() {
 
     if [[ -z "$current_target_ssid" ]]; then
       log "connectivity lost; cannot determine active SSID, skipping login"
-    elif ! is_supported_ssid "$current_target_ssid"; then
-      log "connectivity lost; ssid '$current_target_ssid' not in supported regex '$SUPPORTED_SSID_REGEX', skipping login"
     else
       handle_login "$current_target_ssid"
     fi

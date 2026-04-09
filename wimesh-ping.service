@@ -12,7 +12,7 @@ Environment=WIMESH_CHECK_INTERVAL_SECONDS=3
 Environment=WIMESH_POST_LOGIN_WAIT_SECONDS=3
 Environment=WIMESH_RETRY_BASE_SECONDS=3
 Environment=WIMESH_RETRY_MAX_SECONDS=45
-ExecStart=/usr/local/bin/wimesh_ping_check.sh
+ExecStart=/usr/local/bin/check_ping.sh
 Restart=always
 RestartSec=2s
 StandardOutput=journal
