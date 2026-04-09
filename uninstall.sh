@@ -21,7 +21,7 @@ fi
 for F in \
     /etc/systemd/system/wimesh-ping.service \
     /usr/local/bin/keep_wimesh_session \
-    /usr/local/bin/wimesh_ping_check.sh \
+    /usr/local/bin/check_ping.sh \
     /etc/NetworkManager/dispatcher.d/99-wimesh \
     /tmp/wimesh_ping.lock \
     /tmp/wimesh_login.lock

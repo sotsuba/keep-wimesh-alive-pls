@@ -40,16 +40,18 @@ sudo ./uninstall.sh
 
 - Neu set `WIMESH_SSID`, script se dung SSID nay (override).
 - Neu khong set, script tu dong lay SSID dang ket noi qua NetworkManager.
-- Script chi thu login voi SSID khop regex `WIMESH_SUPPORTED_SSID_REGEX` (mac dinh: `WiMesh|HCMUS-STUDENT|HCMUS-PUBLIC`).
+- Script chi thu login voi SSID khop regex `WIMESH_SUPPORTED_SSID_REGEX` (mac dinh: `WiMesh|Wi-MESH|1\.Free Wi-MESH|HCMUS-STUDENT|HCMUS-PUBLIC`).
 
 Co the override cac bien moi truong trong service:
 
 ```ini
 Environment=WIMESH_CHECK_URL=http://connectivitycheck.gstatic.com/generate_204
 Environment=WIMESH_SSID=
-Environment=WIMESH_SUPPORTED_SSID_REGEX=(WiMesh|HCMUS-STUDENT|HCMUS-PUBLIC)
-Environment=WIMESH_RETRY_BASE_SECONDS=10
-Environment=WIMESH_RETRY_MAX_SECONDS=120
+Environment=WIMESH_SUPPORTED_SSID_REGEX=(WiMesh|Wi-MESH|1\.Free Wi-MESH|HCMUS-STUDENT|HCMUS-PUBLIC)
+Environment=WIMESH_CHECK_INTERVAL_SECONDS=3
+Environment=WIMESH_POST_LOGIN_WAIT_SECONDS=3
+Environment=WIMESH_RETRY_BASE_SECONDS=5
+Environment=WIMESH_RETRY_MAX_SECONDS=45
 ```
 
 Sau khi sua service:
