@@ -1,61 +1,96 @@
-use reqwest::Client; 
+use std::sync::Arc;
+use reqwest::Client;
 use reqwest::cookie::Jar;
-use reqwest::header::{CONTENT_TYPE, COOKIE, HeaderMap, HeaderName, HeaderValue, ORIGIN, REFERER};
+use reqwest::header::{HeaderName, HeaderValue, ORIGIN, REFERER};
 use reqwest::StatusCode;
 use serde_json::{Value, json};
-use uuid::Uuid;
-use chrono::Utc;
 use anyhow::{Context, Result, bail};
 use tracing::{info, warn};
-use tokio::time::sleep;
-use std::time::Duration;
 
-use crate::cookies::{AwingCookies, HotspotCookies, cookie_header_awing, cookie_header_hotspot,
-              get_cookie_from_jar, get_optional_cookie};
-use crate::config::{USER_AGENT_FIREFOX};
-use crate::parse::{build_wifi_info_for_check, parse_login_form, parse_wifi_info, query_param, to_dash_mac};
+use crate::parse::{build_wifi_info_for_check, parse_login_form, parse_wifi_info};
+use crate::step::run_step;
 use crate::strategies::traits::LoginStrategy;
+use super::utils;
 
-pub struct KtxWiMeshStrategy;
+pub struct KtxWiMeshStrategy {
+    jar: Arc<Jar>,
+}
+
+impl KtxWiMeshStrategy {
+    pub fn new(jar: Arc<Jar>) -> Self {
+        Self { jar }
+    }
+}
 
 #[async_trait::async_trait]
 impl LoginStrategy for KtxWiMeshStrategy {
-    async fn login(&self, client: &Client, jar: &Jar) -> Result<()> {
-        let (cookies1, awing_url) = step_probe_and_get_login_cookies(client, jar).await?;
-        let cookies2 = step_load_awing_portal(client, &awing_url, &cookies1).await?;
-        let (token, verify_form) = step_verify_url(client, &awing_url, &cookies2).await?;
+    async fn login(&self, client: &Client) -> Result<()> {
+        let awing_url = run_step(
+            "step1+2+3: probe, load hotspot, and request awing URL",
+            step_probe_and_get_login_cookies(client, &self.jar),
+        ).await?;
 
-        // VerifyUrl already returns contentAuthenForm — use it directly to save one round trip.
-        // Fall back to GetCustomer only if the form was absent.
-        let (username, password, dst) = if let Some(form_html) = verify_form {
-            info!("step6: credentials from VerifyUrl response (skipping GetCustomer)");
-            parse_login_form(&form_html)?
-        } else {
-            step_get_customer(client, &token, &awing_url, &cookies2).await?
-        };
+        run_step(
+            "step4: load awing portal",
+            utils::load_awing_portal(client, &awing_url, Some("http://free.wi-mesh.vn/")),
+        ).await?;
 
-        info!("waiting {} seconds before final login", 3);
-        sleep(Duration::from_secs(3)).await;
+        let (_, form_html) = run_step(
+            "step5: VerifyUrl -> token + pre-filled login form",
+            step_verify_url(client, &awing_url),
+        ).await?;
 
-        step_post_login(client, &username, &password, &dst, &cookies1).await?;
+        let form_html = form_html.context("VerifyUrl did not return contentAuthenForm")?;
+        info!("step6: credentials from VerifyUrl response");
+        let (username, password, dst) = parse_login_form(&form_html)?;
+
+        run_step(
+            "step7: POST final MikroTik login",
+            step_post_login(client, &username, &password, &dst),
+        ).await?;
+
         Ok(())
     }
 }
 
 
+async fn fetch_server_list(client: &Client) -> Vec<String> {
+    match try_fetch_server_list(client).await {
+        Some(servers) => servers,
+        None => {
+            warn!("config.json unavailable, using hardcoded fallback server");
+            vec!["https://ex.login.net.vn".to_string()]
+        }
+    }
+}
+
+async fn try_fetch_server_list(client: &Client) -> Option<Vec<String>> {
+    let config: Value = client
+        .get("http://free.wi-mesh.vn/config.json")
+        .send()
+        .await
+        .ok()?
+        .json()
+        .await
+        .ok()?;
+    let list = config.get("listServer").and_then(Value::as_array)?;
+    let servers: Vec<String> = list
+        .iter()
+        .filter_map(|v| v.as_str().map(ToOwned::to_owned))
+        .collect();
+    if servers.is_empty() { None } else { Some(servers) }
+}
+
 async fn step_probe_and_get_login_cookies(
     client: &Client,
     jar: &Jar,
-) -> Result<(HotspotCookies, String)> {
-    info!("step1+2+3: probe, load hotspot, and request awing URL");
-
-    let probe_response = client
+) -> Result<String> {
+    // The client follows the 302 redirect and the jar stores Set-Cookie headers automatically.
+    let probe_html = client
         .get("http://login.net.vn/")
         .send()
         .await
-        .context("probe request to login.net.vn failed")?;
-    let probe_headers = Some(probe_response.headers().clone());
-    let probe_html = probe_response
+        .context("probe request to login.net.vn failed")?
         .text()
         .await
         .context("failed reading probe response")?;
@@ -68,21 +103,18 @@ async fn step_probe_and_get_login_cookies(
         .unwrap_or(&first_wifi.link_login_only)
         .to_string();
 
-    let response = client
+    let login_html = client
         .get(&login_url)
         .send()
         .await
-        .context("failed to load hotspot login page")?;
+        .context("failed to load hotspot login page")?
+        .text()
+        .await
+        .context("failed reading hotspot page")?;
 
-    let login_headers = response.headers().clone();
+    let wifi = parse_wifi_info(&login_html).or_else(|_| parse_wifi_info(&probe_html))?;
 
-    let pick_cookie = |name: &str| {
-        get_optional_cookie(&login_headers, name)
-            .or_else(|| probe_headers.as_ref().and_then(|h| get_optional_cookie(h, name)))
-            .or_else(|| get_cookie_from_jar(jar, "http://free.wi-mesh.vn/", name))
-    };
-
-    let derived_device_id = first_wifi
+    let device_id = first_wifi
         .raw
         .get("mac-esc")
         .and_then(Value::as_str)
@@ -90,44 +122,13 @@ async fn step_probe_and_get_login_cookies(
         .filter(|v| !v.is_empty())
         .unwrap_or_else(|| first_wifi.mac.replace(':', "").to_uppercase());
 
-    let check_captive = pick_cookie("checkCaptive");
-    let hotspot_wm_device_id = pick_cookie("hotspot_wm_deviceId").unwrap_or_else(|| derived_device_id.clone());
-    let hotspot_wm_token = pick_cookie("hotspot_wm_token");
-
-    let mut missing_optional_cookies = Vec::new();
-    if check_captive.is_none() {
-        missing_optional_cookies.push("checkCaptive");
-    }
-    if hotspot_wm_device_id == derived_device_id {
-        missing_optional_cookies.push("hotspot_wm_deviceId");
-    }
-    if hotspot_wm_token.is_none() {
-        missing_optional_cookies.push("hotspot_wm_token");
-    }
-    if !missing_optional_cookies.is_empty() {
-        info!(
-            "optional-cookie fallback mode: missing [{}], using MAC-derived device id when needed",
-            missing_optional_cookies.join(",")
-        );
-    }
-
-    let cookies = HotspotCookies {
-        check_captive,
-        hotspot_wm_device_id,
-        hotspot_wm_token,
-    };
-
-    let second_html = response
-        .text()
-        .await
-        .context("failed reading hotspot page")?;
-    let wifi = parse_wifi_info(&second_html).or_else(|_| parse_wifi_info(&probe_html))?;
+    let servers = fetch_server_list(client).await;
 
     let body = json!({
         "device": {
-            "deviceId": cookies.hotspot_wm_device_id,
+            "deviceId": device_id,
             "userId": 0,
-            "deviceName": "",
+            "deviceName": "MyDevice",
             "os": "",
             "osVersion": "",
             "appVersion": "",
@@ -142,80 +143,62 @@ async fn step_probe_and_get_login_cookies(
         "wifiInfo": build_wifi_info_for_check(&wifi)
     });
 
-    let response = client
-        .post("https://ex.login.net.vn/api-connect/check")
-        .header(ORIGIN, HeaderValue::from_static("http://free.wi-mesh.vn"))
-        .header(REFERER, HeaderValue::from_static("http://free.wi-mesh.vn/"))
-        .json(&body)
-        .send()
-        .await
-        .context("api-connect/check request failed")?;
-
-    if response.status() != StatusCode::OK {
-        bail!("api-connect/check returned status {}", response.status());
+    let mut check_payload: Option<Value> = None;
+    for server in &servers {
+        let url = format!("{}/api-connect/check", server);
+        let result = client
+            .post(&url)
+            .header(ORIGIN, HeaderValue::from_static("http://free.wi-mesh.vn"))
+            .header(REFERER, HeaderValue::from_static("http://free.wi-mesh.vn/"))
+            .json(&body)
+            .send()
+            .await;
+        match result {
+            Ok(resp) if resp.status() == StatusCode::OK => {
+                match resp.json::<Value>().await {
+                    Ok(payload) if payload.pointer("/data/url").is_some() => {
+                        check_payload = Some(payload);
+                        break;
+                    }
+                    _ => warn!("api-connect/check at {} returned unexpected JSON", server),
+                }
+            }
+            Ok(resp) => warn!("api-connect/check at {} returned status {}", server, resp.status()),
+            Err(e) => warn!("api-connect/check at {} failed: {}", server, e),
+        }
     }
 
-    let payload: Value = response
-        .json()
-        .await
-        .context("invalid JSON from api-connect/check")?;
+    let payload = check_payload.context("api-connect/check failed on all servers")?;
     let awing_url = payload
-        .get("data")
-        .and_then(|d| d.get("url"))
+        .pointer("/data/url")
         .and_then(Value::as_str)
         .map(ToOwned::to_owned)
         .context("api-connect/check missing data.url")?;
 
-    Ok((cookies, awing_url))
-}
-
-async fn step_load_awing_portal(
-    client: &Client,
-    awing_url: &str,
-    cookies1: &HotspotCookies,
-) -> Result<AwingCookies> {
-    info!("step4: load awing portal");
-
-    let mut req = client
-        .get(awing_url)
-        .header(REFERER, HeaderValue::from_static("http://free.wi-mesh.vn/"));
-    if let Some(cookie_header) = cookie_header_hotspot(cookies1) {
-        req = req.header(COOKIE, cookie_header);
+    // Inject the fresh token into the jar so the final POST to free.wi-mesh.vn sends it automatically.
+    if let Some(new_token) = payload.pointer("/data/token").and_then(Value::as_str) {
+        let url = "http://free.wi-mesh.vn/".parse::<reqwest::Url>().unwrap();
+        jar.add_cookie_str(&format!("hotspot_wm_token={}", new_token), &url);
     }
 
-    let response = req.send().await.context("failed to load awing portal")?;
-
-    if !response.status().is_success() {
-        bail!("awing portal returned status {}", response.status());
-    }
-
-    Ok(AwingCookies {
-        ingresscookie: get_optional_cookie(response.headers(), "ingresscookie"),
-        loading_index: get_optional_cookie(response.headers(), "loadingIndex"),
-    })
+    Ok(awing_url)
 }
 
 /// Returns (token, Option<contentAuthenForm HTML>)
-/// VerifyUrl already returns the pre-filled login form — GetCustomer is only needed as fallback.
 async fn step_verify_url(
     client: &Client,
     awing_url: &str,
-    cookies2: &AwingCookies,
 ) -> Result<(String, Option<String>)> {
-    info!("step5: VerifyUrl -> token (+ optional pre-filled form)");
-
-    let mut req = client
+    let response = client
         .get("http://v1.awingconnect.vn/Home/VerifyUrl")
         .header(HeaderName::from_static("x-requested-with"), HeaderValue::from_static("XMLHttpRequest"))
         .header(ORIGIN, HeaderValue::from_static("http://v1.awingconnect.vn"))
         .header(REFERER, HeaderValue::from_str(awing_url).context("invalid awing URL for Referer")?)
-        .header("Accept", "*/*");
+        .header("Accept", "*/*")
+        .send()
+        .await
+        .context("VerifyUrl request failed")?;
 
-    if let Some(cookie_header) = cookie_header_awing(cookies2) {
-        req = req.header(COOKIE, cookie_header);
-    }
-
-    let response = req.send().await.context("VerifyUrl request failed")?;
     if !response.status().is_success() {
         bail!("VerifyUrl returned status {}", response.status());
     }
@@ -231,7 +214,6 @@ async fn step_verify_url(
         .map(ToOwned::to_owned)
         .context("VerifyUrl response missing token")?;
 
-    // VerifyUrl already embeds contentAuthenForm — use it to skip GetCustomer
     let form_html = payload
         .pointer("/captiveContext/contentAuthenForm")
         .and_then(Value::as_str)
@@ -241,124 +223,25 @@ async fn step_verify_url(
     Ok((token, form_html))
 }
 
-async fn step_get_customer(
-    client: &Client,
-    token: &str,
-    awing_url: &str,
-    cookies2: &AwingCookies,
-) -> Result<(String, String, String)> {
-    info!("step6: GetCustomer -> username/password/dst");
-
-    let serial = query_param(awing_url, "serial")?;
-    let client_mac = query_param(awing_url, "client_mac")?;
-
-    let body = json!({
-        "token": token,
-        "captiveContext": {
-            "campaignData": {
-                "sessionId": Uuid::new_v4().to_string(),
-                "macAddress": to_dash_mac(&client_mac),
-                "apMac": to_dash_mac(&serial),
-                "placeId": "4673982451984183424",
-                "domainId": "5476089696408447131",
-                "url": awing_url,
-                "userAgent": USER_AGENT_FIREFOX,
-                "campaignId": "0",
-                "campaignGroupId": 0,
-                "campaignAdId": 0,
-                "campaignType": 0,
-                "isNetworkCampaign": false,
-                "loginId": "0",
-                "loginHtml": null,
-                "welcomeId": "0",
-                "welcomeHtml": null
-            },
-            "customerActions": [0],
-            "domain": null,
-            "customer": null,
-            "placeCustomerInfoCollections": [],
-            "pageViewEvents": [],
-            "customerRequiredFields": [],
-            "contentAuthenForm": null,
-            "createdDate": Utc::now().to_rfc3339()
-        }
-    });
-
-    let mut headers = HeaderMap::new();
-    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json; charset=utf-8"));
-    headers.insert(
-        HeaderName::from_static("x-requested-with"),
-        HeaderValue::from_static("XMLHttpRequest"),
-    );
-    headers.insert(ORIGIN, HeaderValue::from_static("http://v1.awingconnect.vn"));
-    headers.insert(
-        REFERER,
-        HeaderValue::from_str(awing_url).context("invalid awing URL for Referer")?,
-    );
-    if let Some(cookie_header) = cookie_header_awing(cookies2) {
-        headers.insert(COOKIE, HeaderValue::from_str(&cookie_header).context("invalid awing cookies")?);
-    }
-
-    let response = client
-        .post("http://v1.awingconnect.vn/Content/GetCustomer")
-        .headers(headers)
-        .json(&body)
-        .send()
-        .await
-        .context("GetCustomer request failed")?;
-
-    if !response.status().is_success() {
-        bail!("GetCustomer returned status {}", response.status());
-    }
-
-    let payload: Value = response
-        .json()
-        .await
-        .context("GetCustomer response is not JSON")?;
-
-    let content_form = payload
-        .pointer("/captiveContext/contentAuthenForm")
-        .and_then(Value::as_str)
-        .or_else(|| payload.get("contentAuthenForm").and_then(Value::as_str))
-        .context("GetCustomer missing contentAuthenForm HTML")?;
-
-    parse_login_form(content_form)
-}
-
 async fn step_post_login(
     client: &Client,
     username: &str,
     password: &str,
     dst: &str,
-    cookies1: &HotspotCookies,
 ) -> Result<()> {
-    info!("step7: POST final MikroTik login");
-
-    let form = [
-        ("username", username),
-        ("password", password),
-        ("dst", dst),
-        ("popup", "false"),
-    ];
-
     let response = client
         .post("http://free.wi-mesh.vn/login")
         .header(ORIGIN, HeaderValue::from_static("http://v1.awingconnect.vn"))
         .header(REFERER, HeaderValue::from_static("http://v1.awingconnect.vn/"))
-        .form(&form);
-
-    let response = if let Some(cookie_header) = cookie_header_hotspot(cookies1) {
-        response
-            .header(COOKIE, cookie_header)
-            .send()
-            .await
-            .context("final hotspot login POST failed")?
-    } else {
-        response
-            .send()
-            .await
-            .context("final hotspot login POST failed")?
-    };
+        .form(&[
+            ("username", username),
+            ("password", password),
+            ("dst", dst),
+            ("popup", "false"),
+        ])
+        .send()
+        .await
+        .context("final hotspot login POST failed")?;
 
     if !response.status().is_success() {
         bail!("hotspot login returned status {}", response.status());

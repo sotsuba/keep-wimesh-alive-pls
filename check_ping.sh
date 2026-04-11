@@ -72,10 +72,6 @@ detect_current_ssid() {
   iw dev 2>/dev/null | awk '/ssid/ { sub(/^[ \t]*ssid[ \t]+/, ""); print; exit }'
 }
 
-is_supported_ssid() {
-  [[ "$1" =~ $SUPPORTED_SSID_REGEX ]]
-}
-
 next_backoff_seconds() {
   local fail_count="$1"
   
@@ -119,7 +115,7 @@ main() {
   flock -n 9 || { log "already running"; exit 0; }
   trap 'flock -u 9' EXIT
 
-  log "watchdog started (pid $$) ssid_override=${TARGET_SSID_OVERRIDE:-auto} check_url=$CHECK_URL ssid_regex=$SUPPORTED_SSID_REGEX"
+  log "watchdog started (pid $$) ssid_override=${TARGET_SSID_OVERRIDE:-auto} check_url=$CHECK_URL"
 
   while true; do
     if probe_connectivity; then

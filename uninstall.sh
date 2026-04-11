@@ -23,8 +23,7 @@ for F in \
     /usr/local/bin/keep_wimesh_session \
     /usr/local/bin/check_ping.sh \
     /etc/NetworkManager/dispatcher.d/99-wimesh \
-    /tmp/wimesh_ping.lock \
-    /tmp/wimesh_login.lock
+    /tmp/wimesh_ping.lock
 do
     if [[ -f "$F" ]]; then
         rm -f "$F"
@@ -35,7 +34,6 @@ done
 systemctl daemon-reload
 
 echo ""
-echo "Done. Log files kept at:"
+echo "Done. Log file kept at:"
 echo "  /var/log/wimesh_ping.log"
-echo "  /var/log/wimesh_login.log"
-echo "Remove manually if desired: sudo rm /var/log/wimesh_ping.log /var/log/wimesh_login.log"
+echo "Remove manually if desired: sudo rm /var/log/wimesh_ping.log"

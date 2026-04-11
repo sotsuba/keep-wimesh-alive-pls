@@ -5,7 +5,7 @@ pub const USER_AGENT_FIREFOX: &str =
 
 #[derive(Parser, Debug)]
 #[command(name = "keep_wimesh_session")]
-#[command(about = "Automate wi-mesh.com captive portal login flow")]
+#[command(about = "Automate hotspot login flow")]
 pub struct Cli {
     pub ssid: String,
 }

@@ -1,14 +1,13 @@
-use reqwest::Client; 
-use reqwest::cookie::Jar;
+use reqwest::Client;
 use anyhow::Result;
 use crate::strategies::LoginStrategy;
 use tracing::info;
 
-pub struct HcmusStudentStrategy;
+pub struct HcmusStrategy;
 
 #[async_trait::async_trait]
-impl LoginStrategy for HcmusStudentStrategy {
-    async fn login(&self, client: &Client, jar: &Jar) -> Result<()> {
+impl LoginStrategy for HcmusStrategy {
+    async fn login(&self, client: &Client) -> Result<()> {
         let resp = client.post("http://10.232.0.1:8001/api/captiveportal/access/logon/")
             .header("X-Requested-With", "XMLHttpRequest")
             .header("Origin", "http://10.232.0.1:8001")
@@ -18,8 +17,8 @@ impl LoginStrategy for HcmusStudentStrategy {
             )
             .form(&[("user", ""), ("password", "")])
             .send()
-            .await?;    
+            .await?;
         info!("{}", resp.status());
-        Ok(())        
+        Ok(())
     }
 }

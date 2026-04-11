@@ -36,12 +36,10 @@ echo "  [OK] $SERVICE_DEST"
 install -o root -g root -m 755 "$NM_DISPATCHER_SRC" "$NM_DISPATCHER_DEST"
 echo "  [OK] $NM_DISPATCHER_DEST"
 
-for LOGFILE in /var/log/wimesh_ping.log /var/log/wimesh_login.log; do
-    if [[ ! -f "$LOGFILE" ]]; then
-        touch "$LOGFILE" && chmod 644 "$LOGFILE"
-        echo "  [OK] created $LOGFILE"
-    fi
-done
+if [[ ! -f /var/log/wimesh_ping.log ]]; then
+    touch /var/log/wimesh_ping.log && chmod 644 /var/log/wimesh_ping.log
+    echo "  [OK] created /var/log/wimesh_ping.log"
+fi
 
 systemctl daemon-reload
 systemctl enable --now wimesh-ping.service
