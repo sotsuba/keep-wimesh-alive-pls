@@ -120,15 +120,21 @@ $principal = New-ScheduledTaskPrincipal `
     -LogonType Interactive `
     -RunLevel Limited
 
-# Register with logon trigger first, then patch in the event trigger
+# 1. Tạo định nghĩa Task cơ bản (chưa có Trigger)
 $taskDef = New-ScheduledTask `
-    -Action   $action `
-    -Trigger  @($triggerLogon, $cimTrigger) `
-    -Settings $settings `
+    -Action    $action `
+    -Settings  $settings `
     -Principal $principal
 
+# 2. Gán mảng trigger trực tiếp vào thuộc tính Triggers của TaskDefinition
+# Cách này giúp vượt qua lỗi "MismatchedPSTypeName" trên PowerShell 5.1
+$taskDef.Triggers = [Microsoft.Management.Infrastructure.CimInstance[]]($triggerLogon, $cimTrigger)
+
+# 3. Đăng ký Task bằng đối tượng định nghĩa đã hoàn thiện
 Register-ScheduledTask -TaskName $TaskName -InputObject $taskDef -Force | Out-Null
+
 Write-Step "scheduled task '$TaskName' registered (logon + network-connect triggers)"
+
 
 # --- Start immediately --------------------------------------------------------
 Start-ScheduledTask -TaskName $TaskName
