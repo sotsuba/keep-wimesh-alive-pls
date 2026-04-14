@@ -22,11 +22,12 @@ pub async fn run(platform: &dyn Platform, args: &WatchArgs) -> Result<()> {
     let mut login_fail_count: u32 = 0;
 
     loop {
-        let online = tokio::task::block_in_place(|| {
+        let (online, ssid) = tokio::task::block_in_place(|| {
             let Some(gateway) = platform.default_gateway() else {
-                return false;
+                return (false, platform.detect_ssid());
             };
-            platform.ping_gateway(&gateway)
+            let online = platform.ping_gateway(&gateway);
+            (online, platform.detect_ssid())
         });
 
         if online && check_204(&probe_client, &args.check_url).await {
@@ -35,7 +36,7 @@ pub async fn run(platform: &dyn Platform, args: &WatchArgs) -> Result<()> {
             continue;
         }
 
-        let Some(ssid) = platform.detect_ssid() else {
+        let Some(ssid) = ssid else {
             warn!("connectivity lost; cannot determine active SSID, skipping login");
             tokio::time::sleep(Duration::from_secs(args.check_interval)).await;
             continue;

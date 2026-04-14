@@ -1,6 +1,6 @@
 use crate::watcher::platform::traits::{CommandRunner, LockGuard, Platform, RealRunner};
 use anyhow::{Result, bail};
-use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, WAIT_OBJECT_0};
+use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, WAIT_ABANDONED, WAIT_OBJECT_0};
 use windows_sys::Win32::System::Threading::{CreateMutexW, ReleaseMutex, WaitForSingleObject};
 
 const MUTEX_NAME: &str = "Global\\wimesh_watchdog";
@@ -62,14 +62,23 @@ impl<R: CommandRunner> Platform for WindowsPlatform<R> {
             .chain(std::iter::once(0))
             .collect();
         let handle = unsafe { CreateMutexW(std::ptr::null(), 0, name.as_ptr()) };
-        if handle == 0 {
+        if handle == std::ptr::null_mut() {
             bail!("failed to create mutex");
         }
         // WaitForSingleObject with timeout=0: non-blocking try-acquire.
         let result = unsafe { WaitForSingleObject(handle, 0) };
-        if result != WAIT_OBJECT_0 {
-            unsafe { CloseHandle(handle) };
-            bail!("another watchdog instance is already running");
+        match result {
+            // Normal acquisition.
+            WAIT_OBJECT_0 => {}
+            // Previous owner crashed without releasing; we still own the mutex now.
+            WAIT_ABANDONED => {
+                tracing::warn!("watchdog mutex was abandoned by a crashed process; proceeding");
+            }
+            // WAIT_TIMEOUT (another live instance holds it) or WAIT_FAILED.
+            _ => {
+                unsafe { CloseHandle(handle) };
+                bail!("another watchdog instance is already running");
+            }
         }
         Ok(Box::new(MutexLock(handle)))
     }
@@ -79,13 +88,9 @@ impl<R: CommandRunner> Platform for WindowsPlatform<R> {
 
 pub(super) fn parse_netsh_output(output: &str) -> Option<String> {
     // Output contains "    SSID                   : KTX Wi-MESH"
-    // Must match "SSID" but NOT "BSSID".
     output
         .lines()
-        .find(|l| {
-            let t = l.trim();
-            t.starts_with("SSID") && !t.starts_with("BSSID")
-        })
+        .find(|l| l.trim().starts_with("SSID"))
         .and_then(|l| l.splitn(2, ':').nth(1))
         .map(|s| s.trim().to_string())
 }
