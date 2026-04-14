@@ -27,6 +27,12 @@ pub struct KtxWiMeshStrategy {
     jar: Arc<Jar>,
 }
 
+pub static REGISTRY_ENTRY: super::RegistryStrategy = crate::strategies::RegistryStrategy {
+    name: "KTX Wi-MESH",
+    predicate: |ssid| ssid.contains("Wi-MESH"),
+    factory: || Box::new(KtxWiMeshStrategy::new()),
+};
+
 impl KtxWiMeshStrategy {
     pub fn new() -> Self {
         Self {

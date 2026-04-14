@@ -21,6 +21,12 @@ use tracing::info;
 
 pub struct HighlandStrategy;
 
+pub static REGISTRY_ENTRY: super::RegistryStrategy = crate::strategies::RegistryStrategy {
+    name: "Highland Coffee",
+    predicate: |ssid| ssid.contains("Highlands Coffee"),
+    factory: || Box::new(HighlandStrategy),
+};
+
 #[async_trait::async_trait]
 impl LoginStrategy for HighlandStrategy {
     async fn login(&self, client: &Client) -> Result<()> {

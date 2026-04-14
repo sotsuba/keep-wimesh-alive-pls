@@ -10,6 +10,12 @@ const PORTAL_REFERER: &str =
 
 pub struct HcmusStrategy;
 
+pub static REGISTRY_ENTRY: super::RegistryStrategy = super::RegistryStrategy {
+    name: "HCMUS",
+    predicate: |ssid| ssid.contains("HCMUS"),
+    factory: || Box::new(HcmusStrategy),
+};
+
 #[async_trait::async_trait]
 impl LoginStrategy for HcmusStrategy {
     async fn login(&self, client: &Client) -> Result<()> {

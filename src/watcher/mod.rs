@@ -5,7 +5,8 @@ use reqwest::{Client, redirect::Policy};
 use std::time::Duration;
 use tracing::{info, warn};
 
-use crate::cli::{USER_AGENT_FIREFOX, WatchArgs};
+use crate::USER_AGENT_FIREFOX;
+use crate::cli::WatchArgs;
 use crate::strategies::select_strategy;
 use platform::traits::Platform;
 
@@ -48,6 +49,7 @@ pub async fn run(platform: &dyn Platform, args: &WatchArgs) -> Result<()> {
                 login_fail_count = 0;
                 info!("login succeeded");
                 tokio::time::sleep(Duration::from_secs(args.post_login_wait)).await;
+                continue;
             }
             Err(e) => {
                 login_fail_count += 1;
@@ -77,15 +79,7 @@ async fn check_204(client: &Client, url: &str) -> bool {
 
 async fn do_login(ssid: &str) -> Result<()> {
     let strategy = select_strategy(ssid)?;
-    let mut builder = Client::builder()
-        .redirect(Policy::limited(10))
-        .timeout(Duration::from_secs(20))
-        .user_agent(USER_AGENT_FIREFOX)
-        .danger_accept_invalid_certs(true);
-    if let Some(jar) = strategy.cookie_jar() {
-        builder = builder.cookie_provider(jar);
-    }
-    let client = builder.build()?;
+    let client = super::build_client(strategy.as_ref())?;
     strategy.login(&client).await
 }
 

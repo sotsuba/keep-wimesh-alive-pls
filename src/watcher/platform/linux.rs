@@ -34,11 +34,9 @@ impl<R: CommandRunner> Platform for LinuxPlatform<R> {
     }
 
     fn ping_gateway(&self, addr: &str) -> bool {
-        std::process::Command::new("ping")
-            .args(["-c", "1", "-W", "1", addr])
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
+        self.runner.run("ping", &["-c", "1", "-W", "1", addr])
+            .unwrap_or_else(|| "".into())
+            .contains("1 received")
     }
 
     fn acquire_lock(&self) -> Result<Box<dyn LockGuard>> {

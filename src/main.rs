@@ -1,12 +1,11 @@
 use anyhow::{Context, Result};
 use clap::Parser;
-use reqwest::{Client, redirect::Policy};
-use std::time::Duration;
 use tracing::info;
 
-use keep_wimesh_session::cli::{Cli, Command, USER_AGENT_FIREFOX, WatchArgs};
+use keep_wimesh_session::cli::{Cli, Command, WatchArgs};
 use keep_wimesh_session::strategies::select_strategy;
 use keep_wimesh_session::watcher;
+use keep_wimesh_session::build_client;
 
 fn setup_log() {
     tracing_subscriber::fmt()
@@ -26,15 +25,8 @@ async fn main() -> Result<()> {
         Command::Login(args) => {
             let strategy = select_strategy(&args.ssid)?;
             info!("selected strategy for SSID '{}'", args.ssid);
-            let mut builder = Client::builder()
-                .redirect(Policy::limited(10))
-                .timeout(Duration::from_secs(20))
-                .user_agent(USER_AGENT_FIREFOX)
-                .danger_accept_invalid_certs(true);
-            if let Some(jar) = strategy.cookie_jar() {
-                builder = builder.cookie_provider(jar);
-            }
-            let client = builder.build().context("failed to construct HTTP client")?;
+            let client = build_client(strategy.as_ref())
+                .context("failed to build HTTP client")?;
             strategy.login(&client).await?;
         }
         Command::Watch(args) => run_watch(args).await?,
