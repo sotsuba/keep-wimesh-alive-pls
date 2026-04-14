@@ -3,7 +3,7 @@
 **Hostspot được hỗ trợ:**
 
 - `Free-WiMesh` tại KTX Khu B.
-- `HCMUS-STUDENT` tại CS2.
+- `HCMUS-STUDENT` tại CS2 (chưa stable).
 - `Highlands Coffee`.
 
 
@@ -13,7 +13,7 @@ Captive Portal như các hotspot được hỗ trợ đều là open network, d�
 Do đó, khuyến khích dùng VPN như WireGuard, OpenVPN khi sử dụng tool cũng như khi kết nối với mạng công cộng.
 
 ## Miễn trừ trách nhiệm
-Công cụ này được viết ra nhằm tự động hóa quy trình đăng nhập và bỏ qua quảng cáo của hệ thống WiMesh. Việc sử dụng tool có thể coi là hành vi lách quy trình vận hành thông thường của nhà cung cấp dịch vụ.
+Tool được viết ra nhằm tự động hóa quy trình đăng nhập và bỏ qua quảng cáo của các Captive Portal. Việc sử dụng tool có thể coi là hành vi lách quy trình vận hành thông thường của nhà cung cấp dịch vụ.
 
 ## Cài đặt
 
@@ -45,6 +45,19 @@ Expand-Archive keep_wimesh_session-windows-x86_64.zip .
 .\install.ps1         
 # Gỡ cài đặt
 .\install.ps1 -Uninstall
+```
+
+Kiểm tra logs sau khi cài:
+
+```powershell
+# Xem 50 dòng log cuối cùng (live update)
+Get-Content -Path "$env:LOCALAPPDATA\wimesh\task.log" -Tail 50 -Wait
+
+# Hoặc xem toàn bộ logs
+Get-Content -Path "$env:LOCALAPPDATA\wimesh\task.log"
+
+# Xóa logs cũ
+Clear-Content -Path "$env:LOCALAPPDATA\wimesh\task.log"
 ```
 
 ---
