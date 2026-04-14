@@ -8,7 +8,9 @@ use keep_wimesh_session::strategies::select_strategy;
 use keep_wimesh_session::watcher;
 
 fn setup_log() {
+    use std::io::IsTerminal;
     tracing_subscriber::fmt()
+        .with_ansi(std::io::stderr().is_terminal())
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
