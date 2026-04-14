@@ -1,30 +1,23 @@
-pub mod ktx_wimesh;
+pub mod wimesh;
 pub mod hcmus;
 pub mod highland;
 pub mod traits;
 pub mod utils;
-pub use traits::LoginStrategy;
-use std::sync::Arc;
-use reqwest::cookie::Jar;
-use tracing::{info, warn};
+pub mod error;
 
-pub fn select_strategy(config: &super::config::Config, jar: Arc<Jar>) -> Option<Box<dyn LoginStrategy>> {
-    match config.ssid.as_str() {
-        x if x.contains("Wi-MESH") => {
-            info!("Selected strategy: KTX Wi-Mesh");
-            Some(Box::new(ktx_wimesh::KtxWiMeshStrategy::new(jar)))
-        },
-        "Highlands Coffee" => {
-            info!("Selected strategy: Highland Coffee");
-            Some(Box::new(highland::HighlandStrategy))
-        },
-        x if x == "HCMUS-STUDENT" || x == "HCMUS-PUBLIC" => {
-            info!("Selected strategy: HCMUS. This may not work because of fixed IP address. (TODO)");  
-            Some(Box::new(hcmus::HcmusStrategy))
-        }, 
-        _ => {
-            warn!("Unknown SSID '{}'", config.ssid);
-            None
-        }
+pub use traits::LoginStrategy;
+use error::StrategyError;
+
+pub fn select_strategy(ssid: &str) -> Result<Box<dyn LoginStrategy>, StrategyError> {
+    match ssid {
+        x if x.contains("Wi-MESH") 
+            => Ok(Box::new(wimesh::KtxWiMeshStrategy::new()))
+        ,
+        x if x.contains("Highlands Coffee") 
+            => Ok(Box::new(highland::HighlandStrategy)),
+        x if x.contains("HCMUS-STUDENT") || x.contains("HCMUS-PUBLIC") 
+            => Ok(Box::new(hcmus::HcmusStrategy)), 
+        _ 
+            => Err(StrategyError::UnknownSSID(ssid.to_string()))
     }
 }

@@ -1,30 +1,57 @@
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Result, Context, anyhow};
 use regex::Regex;
-use reqwest::Url;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
+use std::sync::LazyLock;
 
-use crate::types::WifiInfo;
+static RE_WIFI_INFO: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"const\s+wifiInfo\s*=\s*(\{.*?\})\s*;"#).unwrap()
+});
+static RE_OCTAL_ESCAPE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"\\([0-7]{1,3})"#).unwrap()
+});
+static RE_JS_KEY: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"([\{,])\s*([A-Za-z0-9_-]+)\s*:"#).unwrap()
+});
+static RE_FIELD_USERNAME: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"name=["']username["']\s+value=["']([^"']+)["']"#).unwrap()
+});
+static RE_FIELD_PASSWORD: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"name=["']password["']\s+value=["']([^"']+)["']"#).unwrap()
+});
+static RE_FIELD_DST: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"name=["']dst["']\s+value=["']([^"']+)["']"#).unwrap()
+});
 
-fn compile_regex(pattern: &str) -> Regex {
-    Regex::new(pattern).expect("regex pattern must compile")
+const HOTSPOT_HOSTNAME: &str = "free.wi-mesh.vn";
+const HOTSPOT_SERVER_ADDR: &str = "172.172.0.1:80";
+
+#[derive(Debug, Clone)]
+pub struct WifiInfo {
+    pub raw: Value,
+    pub mac: String,
+    pub ip: String,
+    pub identity: String,
+    pub link_login_only: String,
+    pub link_orig: String,
+    pub chap_id_raw: String,
+    pub chap_challenge_raw: String,
+    pub interface_name: String,
+    pub server_name: String,
 }
 
 fn extract_wifi_info_json(html: &str) -> Result<String> {
-    let re = compile_regex(r#"const\s+wifiInfo\s*=\s*(\{.*?\})\s*;"#);
-    let object_literal = re
+    let object_literal = RE_WIFI_INFO
         .captures(html)
         .and_then(|c| c.get(1).map(|m| m.as_str().to_owned()))
         .context("could not locate wifiInfo object in hotspot HTML")?;
 
     // wifiInfo contains JS octal escapes like \052 in CHAP fields. JSON does not allow
     // octal escapes, so preserve them as literal text by doubling the slash.
-    let octal_escape_re = compile_regex(r#"\\([0-7]{1,3})"#);
-    let object_literal = octal_escape_re
+    let object_literal = RE_OCTAL_ESCAPE
         .replace_all(&object_literal, r#"\\$1"#)
         .into_owned();
 
-    let key_re = compile_regex(r#"([\{,])\s*([A-Za-z0-9_-]+)\s*:"#);
-    let json_like = key_re.replace_all(&object_literal, "$1\"$2\":");
+    let json_like = RE_JS_KEY.replace_all(&object_literal, "$1\"$2\":");
 
     Ok(json_like.into_owned())
 }
@@ -67,69 +94,17 @@ fn chap_challenge_to_csv(chap_raw: &str) -> String {
 }
 
 pub fn parse_login_form(html: &str) -> Result<(String, String, String)> {
-    let extract_field = |field: &str| -> Result<String> {
-        let pattern = format!(r#"name=[\"']{field}[\"']\s+value=[\"']([^\"']+)[\"']"#);
-        let re = compile_regex(&pattern);
+    let extract = |re: &Regex, field: &str| -> Result<String> {
         re.captures(html)
             .and_then(|c| c.get(1).map(|m| m.as_str().to_string()))
             .ok_or_else(|| anyhow!("contentAuthenForm missing input field: {field}"))
     };
 
     Ok((
-        extract_field("username")?,
-        extract_field("password")?,
-        extract_field("dst")?,
+        extract(&RE_FIELD_USERNAME, "username")?,
+        extract(&RE_FIELD_PASSWORD, "password")?,
+        extract(&RE_FIELD_DST, "dst")?,
     ))
-}
-
-pub fn query_param(url: &str, key: &str) -> Result<String> {
-    let parsed = Url::parse(url).context("invalid URL")?;
-    parsed
-        .query_pairs()
-        .find(|(k, _)| k == key)
-        .map(|(_, v)| v.to_string())
-        .ok_or_else(|| anyhow!("missing query param: {key}"))
-}
-
-/// Extract the `Qv` parameter from a Highland Coffee awing URL.
-///
-/// The `Qv` value uses a non-standard format containing unencoded `=` and `@`
-/// characters (e.g. `Qv=it_qpmjdz=Dbqujwf.ID@bbb_qpmjdz=...`), so standard
-/// URL query-pair parsing truncates it incorrectly.  This function finds `Qv=`
-/// in the raw URL string and returns everything after it.
-pub fn extract_qv_param(url: &str) -> Result<String> {
-    // Work on the query-string portion only to avoid false positives in the host/path.
-    let query = url.find('?').map(|i| &url[i + 1..]).unwrap_or(url);
-    let marker = "Qv=";
-    let pos = query
-        .find(marker)
-        .ok_or_else(|| anyhow!("missing Qv parameter in URL"))?;
-    let after = &query[pos + marker.len()..];
-    // Qv is always the last query parameter in the Highland URL; no '&' follows.
-    // If one ever does appear, stop there so we don't bleed into the next param.
-    let value = after.split('&').next().unwrap_or(after);
-    Ok(value.to_string())
-}
-
-/// Parse `port` and `postToUrl` from the JS embedded in a Highland Coffee
-/// `contentAuthenForm` HTML snippet.
-///
-/// Returns `(port, path)`, defaulting to `(880, "/cgi-bin/hslogin.cgi")` if
-/// the values cannot be found in the script block.
-pub fn parse_highland_script_params(html: &str) -> (u16, String) {
-    let port = compile_regex(r"var\s+port\s*=\s*(\d+)")
-        .captures(html)
-        .and_then(|c| c.get(1))
-        .and_then(|m| m.as_str().parse::<u16>().ok())
-        .unwrap_or(880);
-
-    let path = compile_regex(r#"var\s+postToUrl\s*=\s*["']([^"']+)["']"#)
-        .captures(html)
-        .and_then(|c| c.get(1))
-        .map(|m| m.as_str().to_owned())
-        .unwrap_or_else(|| "/cgi-bin/hslogin.cgi".to_string());
-
-    (port, path)
 }
 
 pub fn build_wifi_info_for_check(w: &WifiInfo) -> Value {
@@ -162,8 +137,8 @@ pub fn build_wifi_info_for_check(w: &WifiInfo) -> Value {
         "blocked": "no",
         "login-by-mac": "no",
         "interface-name": w.interface_name,
-        "hostname": "free.wi-mesh.vn",
-        "server-address": "172.172.0.1:80",
+        "hostname": HOTSPOT_HOSTNAME,
+        "server-address": HOTSPOT_SERVER_ADDR,
         "server-name": w.server_name,
         "domain": "",
         "session-id": "",

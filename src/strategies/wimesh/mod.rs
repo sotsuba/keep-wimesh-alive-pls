@@ -1,26 +1,36 @@
-use std::sync::Arc;
-use reqwest::Client;
-use reqwest::cookie::Jar;
-use reqwest::header::{HeaderName, HeaderValue, ORIGIN, REFERER};
-use reqwest::StatusCode;
-use serde_json::{Value, json};
-use anyhow::{Context, Result, bail};
-use tracing::{info, warn};
+use super::LoginStrategy;
+pub mod parse;
 
-use crate::parse::{build_wifi_info_for_check, parse_login_form, parse_wifi_info};
-use crate::step::run_step;
-use crate::strategies::traits::LoginStrategy;
-use super::utils;
+const PROBE_URL: &str = "http://login.net.vn/";
+const HOTSPOT_ORIGIN: &str = "http://free.wi-mesh.vn";
+const HOTSPOT_BASE: &str = "http://free.wi-mesh.vn/";
+const HOTSPOT_CONFIG_URL: &str = "http://free.wi-mesh.vn/config.json";
+const HOTSPOT_LOGIN_URL: &str = "http://free.wi-mesh.vn/login";
+const AWING_VERIFY_URL: &str = "http://v1.awingconnect.vn/Home/VerifyUrl";
+const AWING_ORIGIN: &str = "http://v1.awingconnect.vn";
+const AWING_REFERER: &str = "http://v1.awingconnect.vn/";
+const FALLBACK_SERVER: &str = "https://ex.login.net.vn";
+use crate::strategies::wimesh::parse::{parse_wifi_info, build_wifi_info_for_check, parse_login_form};
+use super::utils::{load_awing_portal, run_step};
+use tracing::info;
+use std::sync::Arc;     
+use serde_json::{json, Value};
+use reqwest::{Client, StatusCode};
+use reqwest::cookie::Jar;
+use reqwest::header::{HeaderName, HeaderValue, ORIGIN, REFERER};   
+use anyhow::{Context, Result, bail};
+use tracing::warn;
 
 pub struct KtxWiMeshStrategy {
     jar: Arc<Jar>,
 }
 
 impl KtxWiMeshStrategy {
-    pub fn new(jar: Arc<Jar>) -> Self {
-        Self { jar }
+    pub fn new() -> Self {
+        Self { jar: Arc::new(Jar::default()) }
     }
 }
+
 
 #[async_trait::async_trait]
 impl LoginStrategy for KtxWiMeshStrategy {
@@ -32,7 +42,7 @@ impl LoginStrategy for KtxWiMeshStrategy {
 
         run_step(
             "step4: load awing portal",
-            utils::load_awing_portal(client, &awing_url, Some("http://free.wi-mesh.vn/")),
+            load_awing_portal(client, &awing_url, Some(HOTSPOT_BASE)),
         ).await?;
 
         let (_, form_html) = run_step(
@@ -51,6 +61,10 @@ impl LoginStrategy for KtxWiMeshStrategy {
 
         Ok(())
     }
+
+    fn cookie_jar(&self) -> Option<std::sync::Arc<reqwest::cookie::Jar>> {
+        Some(self.jar.clone())
+    }
 }
 
 
@@ -59,14 +73,14 @@ async fn fetch_server_list(client: &Client) -> Vec<String> {
         Some(servers) => servers,
         None => {
             warn!("config.json unavailable, using hardcoded fallback server");
-            vec!["https://ex.login.net.vn".to_string()]
+            vec![FALLBACK_SERVER.to_string()]
         }
     }
 }
 
 async fn try_fetch_server_list(client: &Client) -> Option<Vec<String>> {
     let config: Value = client
-        .get("http://free.wi-mesh.vn/config.json")
+        .get(HOTSPOT_CONFIG_URL)
         .send()
         .await
         .ok()?
@@ -87,7 +101,7 @@ async fn step_probe_and_get_login_cookies(
 ) -> Result<String> {
     // The client follows the 302 redirect and the jar stores Set-Cookie headers automatically.
     let probe_html = client
-        .get("http://login.net.vn/")
+        .get(PROBE_URL)
         .send()
         .await
         .context("probe request to login.net.vn failed")?
@@ -148,8 +162,8 @@ async fn step_probe_and_get_login_cookies(
         let url = format!("{}/api-connect/check", server);
         let result = client
             .post(&url)
-            .header(ORIGIN, HeaderValue::from_static("http://free.wi-mesh.vn"))
-            .header(REFERER, HeaderValue::from_static("http://free.wi-mesh.vn/"))
+            .header(ORIGIN, HeaderValue::from_static(HOTSPOT_ORIGIN))
+            .header(REFERER, HeaderValue::from_static(HOTSPOT_BASE))
             .json(&body)
             .send()
             .await;
@@ -177,7 +191,7 @@ async fn step_probe_and_get_login_cookies(
 
     // Inject the fresh token into the jar so the final POST to free.wi-mesh.vn sends it automatically.
     if let Some(new_token) = payload.pointer("/data/token").and_then(Value::as_str) {
-        let url = "http://free.wi-mesh.vn/".parse::<reqwest::Url>().unwrap();
+        let url = HOTSPOT_BASE.parse::<reqwest::Url>().unwrap();
         jar.add_cookie_str(&format!("hotspot_wm_token={}", new_token), &url);
     }
 
@@ -190,9 +204,9 @@ async fn step_verify_url(
     awing_url: &str,
 ) -> Result<(String, Option<String>)> {
     let response = client
-        .get("http://v1.awingconnect.vn/Home/VerifyUrl")
+        .get(AWING_VERIFY_URL)
         .header(HeaderName::from_static("x-requested-with"), HeaderValue::from_static("XMLHttpRequest"))
-        .header(ORIGIN, HeaderValue::from_static("http://v1.awingconnect.vn"))
+        .header(ORIGIN, HeaderValue::from_static(AWING_ORIGIN))
         .header(REFERER, HeaderValue::from_str(awing_url).context("invalid awing URL for Referer")?)
         .header("Accept", "*/*")
         .send()
@@ -230,9 +244,9 @@ async fn step_post_login(
     dst: &str,
 ) -> Result<()> {
     let response = client
-        .post("http://free.wi-mesh.vn/login")
-        .header(ORIGIN, HeaderValue::from_static("http://v1.awingconnect.vn"))
-        .header(REFERER, HeaderValue::from_static("http://v1.awingconnect.vn/"))
+        .post(HOTSPOT_LOGIN_URL)
+        .header(ORIGIN, HeaderValue::from_static(AWING_ORIGIN))
+        .header(REFERER, HeaderValue::from_static(AWING_REFERER))
         .form(&[
             ("username", username),
             ("password", password),
@@ -257,3 +271,4 @@ async fn step_post_login(
 
     Ok(())
 }
+

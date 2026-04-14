@@ -1,13 +1,22 @@
+pub mod parse;
+
+const PROBE_URL: &str = "http://login.net.vn/";
+const AWING_VERIFY_URL: &str = "http://v1.awingconnect.vn/Home/VerifyUrl";
+const AWING_ORIGIN: &str = "http://v1.awingconnect.vn";
+const AWING_REFERER: &str = "http://v1.awingconnect.vn/";
+
+use super::LoginStrategy;
+use super::utils::{load_awing_portal, run_step};
+use crate::strategies::highland::parse::{extract_qv_param, parse_highland_script_params, query_param};
+
 use reqwest::Client;
 use reqwest::header::{HeaderName, HeaderValue, ORIGIN, REFERER};
 use serde_json::Value;
-use anyhow::{Context, Result, bail};
-use tracing::info;
 
-use crate::parse::{extract_qv_param, parse_highland_script_params, query_param};
-use crate::step::run_step;
-use crate::strategies::LoginStrategy;
-use super::utils;
+
+use anyhow::{Result, Context, bail};
+
+use tracing::info;
 
 pub struct HighlandStrategy;
 
@@ -18,7 +27,7 @@ impl LoginStrategy for HighlandStrategy {
             step_probe_redirect(client)).await?;
 
         run_step("step2: load awing portal",
-            utils::load_awing_portal(client, &awing_url, None)).await?;
+            load_awing_portal(client, &awing_url, None)).await?;
 
         let form_html = run_step("step3: VerifyUrl -> contentAuthenForm",
             step_verify_url(client, &awing_url)).await?;
@@ -33,6 +42,7 @@ impl LoginStrategy for HighlandStrategy {
     }
 }
 
+
 /// Step 1: GET http://login.net.vn/ and capture the final redirect URL.
 ///
 /// Highland Coffee redirects directly (307) to `v1.awingconnect.vn/login?...`
@@ -40,7 +50,7 @@ impl LoginStrategy for HighlandStrategy {
 /// awing URL and contains all parameters needed for the rest of the flow.
 async fn step_probe_redirect(client: &Client) -> Result<String> {
     let response = client
-        .get("http://login.net.vn/")
+        .get(PROBE_URL)
         .send()
         .await
         .context("probe request to login.net.vn failed")?;
@@ -53,12 +63,12 @@ async fn step_probe_redirect(client: &Client) -> Result<String> {
 /// Step 3: POST /Home/VerifyUrl and return the `contentAuthenForm` HTML.
 async fn step_verify_url(client: &Client, awing_url: &str) -> Result<String> {
     let response = client
-        .post("http://v1.awingconnect.vn/Home/VerifyUrl")
+        .post(AWING_VERIFY_URL)
         .header(
             HeaderName::from_static("x-requested-with"),
             HeaderValue::from_static("XMLHttpRequest"),
         )
-        .header(ORIGIN, HeaderValue::from_static("http://v1.awingconnect.vn"))
+        .header(ORIGIN, HeaderValue::from_static(AWING_ORIGIN))
         .header(
             REFERER,
             HeaderValue::from_str(awing_url).context("invalid awing URL for Referer")?,
@@ -115,8 +125,8 @@ async fn step_post_hslogin(
 ) -> Result<()> {
     let response = client
         .post(login_url)
-        .header(ORIGIN, HeaderValue::from_static("http://v1.awingconnect.vn"))
-        .header(REFERER, HeaderValue::from_static("http://v1.awingconnect.vn/"))
+        .header(ORIGIN, HeaderValue::from_static(AWING_ORIGIN))
+        .header(REFERER, HeaderValue::from_static(AWING_REFERER))
         .form(&[
             ("f_flex", ""),
             ("f_flex_type", "log"),

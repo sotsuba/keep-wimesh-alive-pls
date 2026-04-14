@@ -69,7 +69,7 @@ probe_connectivity() {
 }
 
 detect_current_ssid() {
-  iw dev 2>/dev/null | awk '/ssid/ { sub(/^[ \t]*ssid[ \t]+/, ""); print; exit }'
+  nmcli -t -f active,ssid dev wifi | grep '^yes' | cut -d: -f2
 }
 
 next_backoff_seconds() {
