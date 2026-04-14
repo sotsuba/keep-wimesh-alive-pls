@@ -1,6 +1,6 @@
 # keep_wimesh_session
 
-**Hostspot được hỗ trợ:**
+**Hotspot được hỗ trợ:**
 
 - `Free-WiMesh` tại KTX Khu B.
 - `HCMUS-STUDENT` tại CS2 (chưa stable).
@@ -17,7 +17,7 @@ Tool được viết ra nhằm tự động hóa quy trình đăng nhập và b�
 
 ## Cài đặt
 
-### Từ bản release 
+### Từ bản release
 
 Tải bản dựng sẵn từ [Releases](../../releases/latest) — không cần Rust toolchain.
 
@@ -25,8 +25,8 @@ Tải bản dựng sẵn từ [Releases](../../releases/latest) — không cần
 
 ```bash
 tar -xzf keep_wimesh_session-linux-x86_64.tar.gz
-# Cai đặt
-sudo ./install.sh    
+# Cài đặt
+sudo ./install.sh
 # Gỡ cài đặt
 sudo ./uninstall.sh
 ```
@@ -42,7 +42,7 @@ journalctl -t captive-login -f
 
 ```powershell
 Expand-Archive keep_wimesh_session-windows-x86_64.zip .
-.\install.ps1         
+.\install.ps1
 # Gỡ cài đặt
 .\install.ps1 -Uninstall
 ```
@@ -84,3 +84,6 @@ cargo build --release
 .\install.ps1 -Uninstall
 ```
 
+## Đóng góp
+
+Xem [CONTRIBUTING.md](CONTRIBUTING.md) để biết cách thêm hỗ trợ cho một captive portal mới.
