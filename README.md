@@ -39,3 +39,4 @@ cargo build --release
 # Gỡ cài đặt
 .\install.ps1 -Uninstall 
 ```
+
