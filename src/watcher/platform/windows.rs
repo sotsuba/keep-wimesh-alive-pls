@@ -62,7 +62,7 @@ impl<R: CommandRunner> Platform for WindowsPlatform<R> {
             .chain(std::iter::once(0))
             .collect();
         let handle = unsafe { CreateMutexW(std::ptr::null(), 0, name.as_ptr()) };
-        if handle == std::ptr::null_mut() {
+        if handle.is_null() {
             bail!("failed to create mutex");
         }
         // WaitForSingleObject with timeout=0: non-blocking try-acquire.
@@ -91,7 +91,7 @@ pub(super) fn parse_netsh_output(output: &str) -> Option<String> {
     output
         .lines()
         .find(|l| l.trim().starts_with("SSID"))
-        .and_then(|l| l.splitn(2, ':').nth(1))
+        .and_then(|l| l.split_once(':').map(|x| x.1))
         .map(|s| s.trim().to_string())
 }
 
