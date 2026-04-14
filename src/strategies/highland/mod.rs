@@ -7,41 +7,59 @@ const AWING_REFERER: &str = "http://v1.awingconnect.vn/";
 
 use super::LoginStrategy;
 use super::utils::{load_awing_portal, run_step};
-use crate::strategies::highland::parse::{extract_qv_param, parse_highland_script_params, query_param};
+use crate::strategies::highland::parse::{
+    extract_qv_param, parse_highland_script_params, query_param,
+};
 
 use reqwest::Client;
 use reqwest::header::{HeaderName, HeaderValue, ORIGIN, REFERER};
 use serde_json::Value;
 
-
-use anyhow::{Result, Context, bail};
+use anyhow::{Context, Result, bail};
 
 use tracing::info;
 
 pub struct HighlandStrategy;
 
+pub static REGISTRY_ENTRY: super::RegistryStrategy = crate::strategies::RegistryStrategy {
+    name: "Highland Coffee",
+    predicate: |ssid| ssid.contains("Highlands Coffee"),
+    factory: || Box::new(HighlandStrategy),
+};
+
 #[async_trait::async_trait]
 impl LoginStrategy for HighlandStrategy {
     async fn login(&self, client: &Client) -> Result<()> {
-        let awing_url = run_step("step1: probe redirect to awing URL",
-            step_probe_redirect(client)).await?;
+        let awing_url = run_step(
+            "step1: probe redirect to awing URL",
+            step_probe_redirect(client),
+        )
+        .await?;
 
-        run_step("step2: load awing portal",
-            load_awing_portal(client, &awing_url, None)).await?;
+        run_step(
+            "step2: load awing portal",
+            load_awing_portal(client, &awing_url, None),
+        )
+        .await?;
 
-        let form_html = run_step("step3: VerifyUrl -> contentAuthenForm",
-            step_verify_url(client, &awing_url)).await?;
+        let form_html = run_step(
+            "step3: VerifyUrl -> contentAuthenForm",
+            step_verify_url(client, &awing_url),
+        )
+        .await?;
 
         info!("step4: extract login params");
         let (login_url, hs_server, qv) = step_extract_login_params(&awing_url, &form_html)?;
 
-        run_step("step5: POST hslogin",
-            step_post_hslogin(client, &login_url, &hs_server, &qv)).await?;
+        run_step(
+            "step5: POST hslogin",
+            step_post_hslogin(client, &login_url, &hs_server, &qv),
+        )
+        .await?;
 
         Ok(())
     }
 }
-
 
 /// Step 1: GET http://login.net.vn/ and capture the final redirect URL.
 ///
@@ -104,10 +122,8 @@ async fn step_verify_url(client: &Client, awing_url: &str) -> Result<String> {
 /// - `port` and `postToUrl` come from the `<script>` in the form HTML, with
 ///   sane defaults (880 / "/cgi-bin/hslogin.cgi") if parsing fails.
 fn step_extract_login_params(awing_url: &str, form_html: &str) -> Result<(String, String, String)> {
-    let hs_server = query_param(awing_url, "hs_server")
-        .context("awing URL missing hs_server")?;
-    let qv = extract_qv_param(awing_url)
-        .context("awing URL missing Qv")?;
+    let hs_server = query_param(awing_url, "hs_server").context("awing URL missing hs_server")?;
+    let qv = extract_qv_param(awing_url).context("awing URL missing Qv")?;
 
     let (port, post_path) = parse_highland_script_params(form_html);
     let login_url = format!("http://{}:{}{}", hs_server, port, post_path);

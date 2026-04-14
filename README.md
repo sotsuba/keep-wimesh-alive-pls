@@ -17,26 +17,57 @@ Công cụ này được viết ra nhằm tự động hóa quy trình đăng nh
 
 ## Cài đặt
 
-Yêu cầu: Rust toolchain.
+### Từ bản release 
 
-### GNU/Linux
+Tải bản dựng sẵn từ [Releases](../../releases/latest) — không cần Rust toolchain.
+
+**GNU/Linux**
 
 ```bash
-# Cài đặt
+tar -xzf keep_wimesh_session-linux-x86_64.tar.gz
+# Cai đặt
+sudo ./install.sh    
+# Gỡ cài đặt
+sudo ./uninstall.sh
+```
+
+Kiểm tra trạng thái sau khi cài:
+
+```bash
+systemctl status captive-login
+journalctl -t captive-login -f
+```
+
+**Windows**
+
+```powershell
+Expand-Archive keep_wimesh_session-windows-x86_64.zip .
+.\install.ps1         
+# Gỡ cài đặt
+.\install.ps1 -Uninstall
+```
+
+---
+
+### Tự build từ mã nguồn
+
+Yêu cầu: Rust toolchain.
+
+**GNU/Linux**
+
+```bash
 cargo build --release
 sudo ./install.sh
 # Gỡ cài đặt
 sudo ./uninstall.sh
 ```
 
-### Windows
-
+**Windows**
 
 ```powershell
-# Cài đặt
 cargo build --release
-.\install.ps1          
+.\install.ps1
 # Gỡ cài đặt
-.\install.ps1 -Uninstall 
+.\install.ps1 -Uninstall
 ```
 

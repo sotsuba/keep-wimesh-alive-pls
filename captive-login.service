@@ -1,0 +1,23 @@
+[Unit]
+Description=Keep captive-portal WiFi session alive
+After=network-online.target NetworkManager.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/keep_wimesh_session watch
+Restart=always
+RestartSec=2
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=captive-login
+Environment=RUST_LOG=info
+Environment=WIMESH_RETRY_BASE_SECONDS=3
+Environment=WIMESH_RETRY_MAX_SECONDS=45
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/tmp
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
