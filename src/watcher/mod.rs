@@ -3,6 +3,7 @@ pub mod platform;
 use anyhow::Result;
 use reqwest::{Client, redirect::Policy};
 use std::time::Duration;
+use tokio::sync::watch;
 use tracing::{info, warn};
 
 use crate::USER_AGENT_FIREFOX;
@@ -10,9 +11,13 @@ use crate::cli::WatchArgs;
 use crate::strategies::select_strategy;
 use platform::traits::Platform;
 
-pub async fn run(platform: &dyn Platform, args: &WatchArgs) -> Result<()> {
+pub async fn run(
+    platform: &dyn Platform,
+    args: &WatchArgs,
+    mut shutdown: watch::Receiver<bool>,
+) -> Result<()> {
     let _lock = platform.acquire_lock()?;
-    info!("watchdog started; check_url={}", args.check_url);
+    info!(check_url = %args.check_url, "watchdog started");
 
     let probe_client = Client::builder()
         .timeout(Duration::from_secs(4))
@@ -23,48 +28,65 @@ pub async fn run(platform: &dyn Platform, args: &WatchArgs) -> Result<()> {
     let mut login_fail_count: u32 = 0;
 
     loop {
-        let (online, ssid) = tokio::task::block_in_place(|| {
-            let Some(gateway) = platform.default_gateway() else {
-                return (false, platform.detect_ssid());
-            };
-            let online = platform.ping_gateway(&gateway);
-            (online, platform.detect_ssid())
-        });
-
-        if online && check_204(&probe_client, &args.check_url).await {
+        if check_204(&probe_client, &args.check_url).await {
             login_fail_count = 0;
-            tokio::time::sleep(Duration::from_secs(args.check_interval)).await;
+            sleep_or_shutdown(Duration::from_secs(args.check_interval), &mut shutdown).await;
+            if *shutdown.borrow() {
+                break;
+            }
             continue;
         }
 
+        let ssid = tokio::task::block_in_place(|| platform.detect_ssid());
+
         let Some(ssid) = ssid else {
-            warn!("connectivity lost; cannot determine active SSID, skipping login");
-            tokio::time::sleep(Duration::from_secs(args.check_interval)).await;
+            warn!("connectivity lost; no active SSID detected, skipping login");
+            sleep_or_shutdown(Duration::from_secs(args.check_interval), &mut shutdown).await;
+            if *shutdown.borrow() {
+                break;
+            }
             continue;
         };
 
-        info!("connectivity lost; running login for ssid={}", ssid);
+        info!(ssid, "connectivity lost; re-authenticating");
         match do_login(&ssid).await {
             Ok(_) => {
                 login_fail_count = 0;
-                info!("login succeeded");
-                tokio::time::sleep(Duration::from_secs(args.post_login_wait)).await;
+                info!(ssid, "login succeeded");
+                sleep_or_shutdown(Duration::from_secs(args.post_login_wait), &mut shutdown).await;
+                if *shutdown.borrow() {
+                    break;
+                }
                 continue;
             }
             Err(e) => {
                 login_fail_count += 1;
                 let backoff = next_backoff(login_fail_count, args.retry_base, args.retry_max);
                 warn!(
-                    "login failed (count={}): {}; backing off {}s",
-                    login_fail_count,
-                    e,
-                    backoff.as_secs()
+                    ssid,
+                    fail_count = login_fail_count,
+                    backoff_secs = backoff.as_secs(),
+                    error = %e,
+                    "login failed; backing off"
                 );
-                tokio::time::sleep(backoff).await;
+                sleep_or_shutdown(backoff, &mut shutdown).await;
+                if *shutdown.borrow() {
+                    break;
+                }
+                continue;
             }
         }
+    }
 
-        tokio::time::sleep(Duration::from_secs(args.check_interval)).await;
+    info!("watchdog stopped");
+    Ok(())
+}
+
+/// Sleep for `duration`, but return early if a shutdown signal arrives.
+async fn sleep_or_shutdown(duration: Duration, shutdown: &mut watch::Receiver<bool>) {
+    tokio::select! {
+        _ = shutdown.changed() => {}
+        _ = tokio::time::sleep(duration) => {}
     }
 }
 

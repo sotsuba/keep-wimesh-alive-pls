@@ -21,7 +21,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$TaskName   = "wimesh-ping"
+$TaskName   = "captive-login"
 $InstallDir = "$env:LOCALAPPDATA\wimesh"
 $BinarySrc  = ".\target\release\keep_wimesh_session.exe"
 $ScriptSrc  = ".\check_ping.ps1"

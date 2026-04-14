@@ -34,7 +34,8 @@ impl<R: CommandRunner> Platform for LinuxPlatform<R> {
     }
 
     fn ping_gateway(&self, addr: &str) -> bool {
-        self.runner.run("ping", &["-c", "1", "-W", "1", addr])
+        self.runner
+            .run("ping", &["-c", "1", "-W", "1", addr])
             .unwrap_or_else(|| "".into())
             .contains("1 received")
     }

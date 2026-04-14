@@ -2,10 +2,10 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use tracing::info;
 
+use keep_wimesh_session::build_client;
 use keep_wimesh_session::cli::{Cli, Command, WatchArgs};
 use keep_wimesh_session::strategies::select_strategy;
 use keep_wimesh_session::watcher;
-use keep_wimesh_session::build_client;
 
 fn setup_log() {
     tracing_subscriber::fmt()
@@ -25,8 +25,7 @@ async fn main() -> Result<()> {
         Command::Login(args) => {
             let strategy = select_strategy(&args.ssid)?;
             info!("selected strategy for SSID '{}'", args.ssid);
-            let client = build_client(strategy.as_ref())
-                .context("failed to build HTTP client")?;
+            let client = build_client(strategy.as_ref()).context("failed to build HTTP client")?;
             strategy.login(&client).await?;
         }
         Command::Watch(args) => run_watch(args).await?,
@@ -35,18 +34,37 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+fn make_shutdown_channel() -> tokio::sync::watch::Receiver<bool> {
+    let (tx, rx) = tokio::sync::watch::channel(false);
+    tokio::spawn(async move {
+        let _ = tokio::signal::ctrl_c().await;
+        let _ = tx.send(true);
+    });
+    rx
+}
+
 #[cfg(target_os = "linux")]
 async fn run_watch(args: WatchArgs) -> Result<()> {
     use keep_wimesh_session::watcher::platform::linux::LinuxPlatform;
     use keep_wimesh_session::watcher::platform::traits::RealRunner;
-    watcher::run(&LinuxPlatform::new(RealRunner), &args).await
+    watcher::run(
+        &LinuxPlatform::new(RealRunner),
+        &args,
+        make_shutdown_channel(),
+    )
+    .await
 }
 
 #[cfg(target_os = "windows")]
 async fn run_watch(args: WatchArgs) -> Result<()> {
     use keep_wimesh_session::watcher::platform::traits::RealRunner;
     use keep_wimesh_session::watcher::platform::windows::WindowsPlatform;
-    watcher::run(&WindowsPlatform::new(RealRunner), &args).await
+    watcher::run(
+        &WindowsPlatform::new(RealRunner),
+        &args,
+        make_shutdown_channel(),
+    )
+    .await
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]

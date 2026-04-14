@@ -16,11 +16,11 @@ pub fn build_client(strategy: &dyn strategies::LoginStrategy) -> anyhow::Result<
         .timeout(std::time::Duration::from_secs(20))
         .user_agent(USER_AGENT_FIREFOX)
         .danger_accept_invalid_certs(true);
-    
+
     if let Some(jar) = strategy.cookie_jar() {
         builder = builder.cookie_provider(jar);
     }
-    
+
     let client = builder.build()?;
     Ok(client)
 }

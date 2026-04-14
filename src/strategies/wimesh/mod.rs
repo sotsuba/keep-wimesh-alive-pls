@@ -1,7 +1,6 @@
 use super::LoginStrategy;
 pub mod parse;
 
-const PROBE_URL: &str = "http://login.net.vn/";
 const HOTSPOT_ORIGIN: &str = "http://free.wi-mesh.vn";
 const HOTSPOT_BASE: &str = "http://free.wi-mesh.vn/";
 const HOTSPOT_CONFIG_URL: &str = "http://free.wi-mesh.vn/config.json";
@@ -125,29 +124,12 @@ async fn try_fetch_server_list(client: &Client) -> Option<Vec<String>> {
     }
 }
 
-/// Step 1+2: GET login.net.vn then follow to the hotspot login page.
-/// Returns `(first_wifi, wifi)` — first_wifi is used for device_id, wifi for the check body.
+/// Step 1+2: Load the hotspot login page directly.
+/// Returns `(first_wifi, wifi)` — both parsed from the same page;
+/// first_wifi.mac-esc is used for device_id, wifi for the api-connect/check body.
 async fn probe_hotspot(client: &Client) -> Result<(parse::WifiInfo, parse::WifiInfo)> {
-    // The client follows the 302 redirect; jar stores Set-Cookie headers automatically.
-    let probe_html = client
-        .get(PROBE_URL)
-        .send()
-        .await
-        .context("probe request to login.net.vn failed")?
-        .text()
-        .await
-        .context("failed reading probe response")?;
-
-    let first_wifi = parse_wifi_info(&probe_html)?;
-    let login_url = first_wifi
-        .raw
-        .get("link-login")
-        .and_then(Value::as_str)
-        .unwrap_or(&first_wifi.link_login_only)
-        .to_string();
-
-    let login_html = client
-        .get(&login_url)
+    let html = client
+        .get(HOTSPOT_BASE)
         .send()
         .await
         .context("failed to load hotspot login page")?
@@ -155,8 +137,8 @@ async fn probe_hotspot(client: &Client) -> Result<(parse::WifiInfo, parse::WifiI
         .await
         .context("failed reading hotspot page")?;
 
-    let wifi = parse_wifi_info(&login_html).or_else(|_| parse_wifi_info(&probe_html))?;
-    Ok((first_wifi, wifi))
+    let wifi = parse_wifi_info(&html)?;
+    Ok((wifi.clone(), wifi))
 }
 
 /// Build the JSON body for api-connect/check from probed wifi info.
@@ -240,7 +222,7 @@ async fn call_api_connect_check(client: &Client, body: &Value, jar: &Jar) -> Res
 /// Returns (token, Option<contentAuthenForm HTML>)
 async fn step_verify_url(client: &Client, awing_url: &str) -> Result<(String, Option<String>)> {
     let response = client
-        .get(AWING_VERIFY_URL)
+        .post(AWING_VERIFY_URL)
         .header(
             HeaderName::from_static("x-requested-with"),
             HeaderValue::from_static("XMLHttpRequest"),
@@ -250,7 +232,7 @@ async fn step_verify_url(client: &Client, awing_url: &str) -> Result<(String, Op
             REFERER,
             HeaderValue::from_str(awing_url).context("invalid awing URL for Referer")?,
         )
-        .header("Accept", "*/*")
+        .header("Content-Length", "0")
         .send()
         .await
         .context("VerifyUrl request failed")?;

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BINARY_SRC="$SCRIPT_DIR/keep_wimesh_session"
+BINARY_SRC="$SCRIPT_DIR/target/release/keep_wimesh_session"
 BINARY_DEST="/usr/local/bin/keep_wimesh_session"
 SERVICE_SRC="$SCRIPT_DIR/captive-login.service"
 SERVICE_DEST="/etc/systemd/system/captive-login.service"

@@ -29,11 +29,6 @@ pub fn select_strategy(ssid: &str) -> Result<Box<dyn LoginStrategy>, StrategyErr
         .ok_or_else(|| StrategyError::UnknownSSID(ssid.to_string()))
 }
 
-use anyhow::{Result, self};
-use reqwest::{Client, redirect::Policy};
-use std::time::Duration;
-use crate::USER_AGENT_FIREFOX;
-
 #[cfg(test)]
 mod tests {
     use super::*;
