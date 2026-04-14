@@ -1,26 +1,20 @@
-use anyhow::{Result, Context, anyhow};
+use anyhow::{Context, Result, anyhow};
 use regex::Regex;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::LazyLock;
 
-static RE_WIFI_INFO: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"const\s+wifiInfo\s*=\s*(\{.*?\})\s*;"#).unwrap()
-});
-static RE_OCTAL_ESCAPE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"\\([0-7]{1,3})"#).unwrap()
-});
-static RE_JS_KEY: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"([\{,])\s*([A-Za-z0-9_-]+)\s*:"#).unwrap()
-});
-static RE_FIELD_USERNAME: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"name=["']username["']\s+value=["']([^"']+)["']"#).unwrap()
-});
-static RE_FIELD_PASSWORD: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"name=["']password["']\s+value=["']([^"']+)["']"#).unwrap()
-});
-static RE_FIELD_DST: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"name=["']dst["']\s+value=["']([^"']+)["']"#).unwrap()
-});
+static RE_WIFI_INFO: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"const\s+wifiInfo\s*=\s*(\{.*?\})\s*;"#).unwrap());
+static RE_OCTAL_ESCAPE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"\\([0-7]{1,3})"#).unwrap());
+static RE_JS_KEY: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"([\{,])\s*([A-Za-z0-9_-]+)\s*:"#).unwrap());
+static RE_FIELD_USERNAME: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"name=["']username["']\s+value=["']([^"']+)["']"#).unwrap());
+static RE_FIELD_PASSWORD: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"name=["']password["']\s+value=["']([^"']+)["']"#).unwrap());
+static RE_FIELD_DST: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"name=["']dst["']\s+value=["']([^"']+)["']"#).unwrap());
 
 const HOTSPOT_HOSTNAME: &str = "free.wi-mesh.vn";
 const HOTSPOT_SERVER_ADDR: &str = "172.172.0.1:80";
@@ -110,7 +104,11 @@ pub fn parse_login_form(html: &str) -> Result<(String, String, String)> {
 pub fn build_wifi_info_for_check(w: &WifiInfo) -> Value {
     let chap_id = chap_id_to_digits(&w.chap_id_raw);
     let chap_challenge = chap_challenge_to_csv(&w.chap_challenge_raw);
-    let link_login = format!("{}?dst={}", w.link_login_only, urlencoding::encode(&w.link_orig));
+    let link_login = format!(
+        "{}?dst={}",
+        w.link_login_only,
+        urlencoding::encode(&w.link_orig)
+    );
 
     json!({
         "identity": w.identity,

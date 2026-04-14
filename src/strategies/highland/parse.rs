@@ -1,14 +1,11 @@
-use anyhow::{Result, anyhow, Context};
+use anyhow::{Context, Result, anyhow};
 use regex::Regex;
 use reqwest::Url;
 use std::sync::LazyLock;
 
-static RE_PORT: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"var\s+port\s*=\s*(\d+)").unwrap()
-});
-static RE_POST_URL: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"var\s+postToUrl\s*=\s*["']([^"']+)["']"#).unwrap()
-});
+static RE_PORT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"var\s+port\s*=\s*(\d+)").unwrap());
+static RE_POST_URL: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"var\s+postToUrl\s*=\s*["']([^"']+)["']"#).unwrap());
 
 pub fn query_param(url: &str, key: &str) -> Result<String> {
     let parsed = Url::parse(url).context("invalid URL")?;
