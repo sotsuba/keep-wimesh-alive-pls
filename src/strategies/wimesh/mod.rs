@@ -28,7 +28,7 @@ pub struct KtxWiMeshStrategy {
 
 pub static REGISTRY_ENTRY: super::RegistryStrategy = crate::strategies::RegistryStrategy {
     name: "KTX Wi-MESH",
-    predicate: |ssid| ssid.contains("Wi-MESH"),
+    predicate: |ssid| ssid.contains("Free Wi-MESH"),
     factory: || Box::new(KtxWiMeshStrategy::new()),
 };
 

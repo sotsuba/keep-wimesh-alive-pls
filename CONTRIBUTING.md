@@ -15,7 +15,6 @@ Xác định các bước chính:
 
 Trước hết mô phỏng lại toàn bộ luồng. Sau đó tối ưu dần bằng cách bỏ qua các bước mà có khả năng không cần thiết và bỏ từng bước một thôi.
 
-
 ## 3. Triển khai strategy
 
 1. Tạo `src/strategies/<tên>/mod.rs`, implement trait `LoginStrategy` (xem `src/strategies/hcmus/` cho luồng đơn giản, `src/strategies/wimesh/` cho luồng nhiều bước có cookie).
