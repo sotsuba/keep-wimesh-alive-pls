@@ -1,147 +1,151 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Installs keep_wimesh_session and registers a Task Scheduler task
-    that runs the watchdog on every network connection event.
+    Manages the installation and uninstallation of the keep_wimesh_session background task.
 
 .DESCRIPTION
-    Copies the binary to %LOCALAPPDATA%\wimesh\,
-    then creates a scheduled task that triggers on network-available events and at logon.
+    This script deploys the keep_wimesh_session binary to the user's local AppData
+    directory and registers a Scheduled Task. 
+
+    Self-elevation is handled automatically if the script is not run as Administrator,
+    while preserving the original standard user's context (profile paths and username).
 
 .EXAMPLE
     .\install.ps1
+    Installs or updates the binary and scheduled task.
+
+.EXAMPLE
     .\install.ps1 -Uninstall
+    Stops the task, unregisters it, and removes the deployed files.
 #>
 
+[CmdletBinding()]
 param(
-    [switch]$Uninstall
+    [switch]$Uninstall,
+    [string]$TargetUser = $env:USERNAME,
+    [string]$TargetLocalAppData = $env:LOCALAPPDATA
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-if (-not $isAdmin) {
-    Write-Host "  [!!] Administrator privileges are required to register event-based Scheduled Tasks." -ForegroundColor Red
-    Write-Host "       Please right-click PowerShell -> 'Run as Administrator', then run this script again." -ForegroundColor Yellow
-    exit 1
-}
-
-$ScriptDir  = $PSScriptRoot
-if (-not $ScriptDir) {
-    Write-Host "  [!!] Cannot determine script directory. Run the script directly, not via dot-sourcing." -ForegroundColor Red
-    exit 1
-}
-
-$TaskName   = "captive-login"
-$InstallDir = "$env:LOCALAPPDATA\wimesh"
-$LogFile    = "$InstallDir\task.log"
-
-if (Test-Path "$ScriptDir\keep_wimesh_session.exe") {
-    $BinarySrc = "$ScriptDir\keep_wimesh_session.exe"
-} else {
-    $BinarySrc = "$ScriptDir\target\release\keep_wimesh_session.exe"
-}
-
-$BinaryDest = "$InstallDir\keep_wimesh_session.exe"
-
-function Write-Step ([string]$msg) { Write-Host "  [OK] $msg" -ForegroundColor Green }
-function Write-Fail ([string]$msg) { Write-Host "  [!!] $msg" -ForegroundColor Red }
-
 # ==============================================================================
-# UNINSTALL
+# 1. CONTEXT-AWARE SELF-ELEVATION
 # ==============================================================================
-if ($Uninstall) {
-    Write-Host "Uninstalling keep_wimesh_session..."
+$isAdministrator = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
-    $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-    if ($task) {
-        Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-        Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
-        Write-Step "scheduled task '$TaskName' removed"
+if (-not $isAdministrator) {
+    Write-Host "Requesting administrative privileges..." -ForegroundColor Cyan
+    
+    # Pass standard user context explicitly to the elevated process
+    $argList = @(
+        "-NoProfile",
+        "-ExecutionPolicy Bypass",
+        "-File `"$PSCommandPath`"",
+        "-TargetUser `"$TargetUser`"",
+        "-TargetLocalAppData `"$TargetLocalAppData`""
+    )
+    if ($Uninstall) { $argList += "-Uninstall" }
+    
+    try {
+        Start-Process powershell.exe -Verb RunAs -ArgumentList ($argList -join ' ') -WorkingDirectory $PSScriptRoot
+    } catch {
+        Write-Host "Elevation cancelled or failed. Script cannot continue." -ForegroundColor Red
     }
-
-    # Kill the binary first (it holds a lock on keep_wimesh_session.exe).
-    # The powershell wrapper exits on its own once the binary process ends.
-    Get-Process -Name "keep_wimesh_session" -ErrorAction SilentlyContinue |
-        Stop-Process -Force -ErrorAction SilentlyContinue
-    Start-Sleep -Milliseconds 500
-
-    if (Test-Path $InstallDir) {
-        Remove-Item -Recurse -Force $InstallDir
-        Write-Step "removed $InstallDir"
-    }
-
-    Write-Host ""
-    Write-Host "Done."
     exit 0
 }
 
 # ==============================================================================
-# INSTALL
+# 2. CONFIGURATION & VARIABLES
 # ==============================================================================
-Write-Host "Installing keep_wimesh_session..."
+$TaskName       = "captive-login"
+$BinaryName     = "keep_wimesh_session.exe"
+$BinaryBaseName = "keep_wimesh_session"
+$InstallDir     = Join-Path -Path $TargetLocalAppData -ChildPath "wimesh"
+$BinaryDest     = Join-Path -Path $InstallDir -ChildPath $BinaryName
 
-# --- Stop existing task and process if running --------------------------------
-$task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-if ($task) {
-    Write-Host "  [*] Stopping existing task..."
-    Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 1
-}
-# Kill the binary process so it releases the file lock before Copy-Item.
-Get-Process -Name "keep_wimesh_session" -ErrorAction SilentlyContinue |
-    Stop-Process -Force -ErrorAction SilentlyContinue
-Start-Sleep -Milliseconds 500
-
-# --- Preflight checks ---------------------------------------------------------
+$BinarySrc = Join-Path -Path $PSScriptRoot -ChildPath $BinaryName
 if (-not (Test-Path $BinarySrc)) {
-    Write-Fail "binary not found at $BinarySrc"
-    Write-Host "Make sure keep_wimesh_session.exe is in the same directory, or run: cargo build --release" -ForegroundColor Yellow
-    exit 1
+    $BinarySrc = Join-Path -Path $PSScriptRoot -ChildPath "target\release\$BinaryName"
 }
 
-# --- Copy files ---------------------------------------------------------------
-if (-not (Test-Path $InstallDir)) {
-    New-Item -ItemType Directory -Path $InstallDir | Out-Null
-}
-Copy-Item -Force $BinarySrc $BinaryDest
-Write-Step $BinaryDest
+function Write-Step ([string]$Message) { Write-Host "  [OK] $Message" -ForegroundColor Green }
+function Write-Fail ([string]$Message) { Write-Host "  [!!] $Message" -ForegroundColor Red }
 
-# --- Write a wrapper script ---------------------------------------------------
-# A .ps1 file on disk avoids argument-escaping bugs that occur when redirection
-# operators are embedded inside a Task Scheduler Argument string (they are passed
-# to CreateProcess verbatim and may not be parsed as shell operators by cmd.exe).
-# StreamWriter uses FileShare.Read so Get-Content -Wait can tail the log live.
-$WrapperScript = "$InstallDir\run.ps1"
-Set-Content -Path $WrapperScript -Encoding UTF8 -Value @"
-`$w = [System.IO.File]::AppendText("$LogFile")
-`$w.AutoFlush = `$true
+# ==============================================================================
+# 3. MAIN EXECUTION
+# ==============================================================================
 try {
-    & "$BinaryDest" watch 2>&1 | ForEach-Object { `$w.WriteLine([string]`$_) }
-} finally {
-    `$w.Dispose()
-}
-"@
-Write-Step $WrapperScript
+    # --------------------------------------------------------------------------
+    # UNINSTALLATION PATH
+    # --------------------------------------------------------------------------
+    if ($Uninstall) {
+        Write-Host "Starting uninstallation for user: $TargetUser"
 
-# --- Register scheduled task --------------------------------------------------
-$action = New-ScheduledTaskAction `
-    -Execute "powershell.exe" `
-    -Argument "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$WrapperScript`""
+        $existingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+        if ($existingTask) {
+            Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+            Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
+            Write-Step "Scheduled task '$TaskName' removed."
+        }
 
-# Trigger 1: at logon
-$triggerLogon = New-ScheduledTaskTrigger -AtLogOn
+        # Kill any lingering processes before deleting directory
+        $process = Get-Process -Name $BinaryBaseName -ErrorAction SilentlyContinue
+        if ($process) {
+            $process | Stop-Process -Force
+            $process | Wait-Process -Timeout 5 -ErrorAction SilentlyContinue
+        }
 
-# Trigger 2: on network-state-change
-# Event 10000 in Microsoft-Windows-NetworkProfile/Operational = network connected
-$cimTrigger = (
-    New-CimInstance -Namespace "Root/Microsoft/Windows/TaskScheduler" `
+        if (Test-Path $InstallDir) {
+            Remove-Item -Path $InstallDir -Recurse -Force
+            Write-Step "Directory '$InstallDir' removed."
+        }
+
+        Write-Host "`nUninstallation completed successfully." -ForegroundColor Cyan
+        Read-Host "Press Enter to exit"
+        exit 0
+    }
+
+    # --------------------------------------------------------------------------
+    # INSTALLATION PATH
+    # --------------------------------------------------------------------------
+    Write-Host "Starting installation for user: $TargetUser"
+
+    if (-not (Test-Path $BinarySrc)) {
+        Write-Fail "Binary not found. Please ensure '$BinaryName' is in the same folder as this script."
+        Read-Host "Press Enter to exit"
+        exit 1
+    }
+
+    # Stop existing task to release file locks
+    $existingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    if ($existingTask) {
+        Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    }
+    
+    $process = Get-Process -Name $BinaryBaseName -ErrorAction SilentlyContinue
+    if ($process) {
+        $process | Stop-Process -Force
+        $process | Wait-Process -Timeout 5 -ErrorAction SilentlyContinue
+    }
+
+    # Deploy Binary
+    if (-not (Test-Path $InstallDir)) {
+        New-Item -ItemType Directory -Path $InstallDir | Out-Null
+    }
+    Copy-Item -Path $BinarySrc -Destination $BinaryDest -Force
+    Write-Step "Binary deployed to $BinaryDest"
+
+    # Define Task Components
+    $action = New-ScheduledTaskAction -Execute $BinaryDest -Argument "watch"
+    
+    $triggerLogon = New-ScheduledTaskTrigger -AtLogOn
+    $triggerNet = New-CimInstance -Namespace "Root/Microsoft/Windows/TaskScheduler" `
         -ClassName "MSFT_TaskEventTrigger" `
         -ClientOnly `
         -Property @{
-            Enabled       = $true
-            Subscription  = @"
+            Enabled      = $true
+            Subscription = @"
 <QueryList>
   <Query Id="0" Path="Microsoft-Windows-NetworkProfile/Operational">
     <Select Path="Microsoft-Windows-NetworkProfile/Operational">
@@ -151,54 +155,43 @@ $cimTrigger = (
 </QueryList>
 "@
         }
-)
 
-$settings = New-ScheduledTaskSettingsSet `
-    -MultipleInstances IgnoreNew `
-    -ExecutionTimeLimit (New-TimeSpan -Hours 0) `
-    -RestartCount 10 `
-    -RestartInterval (New-TimeSpan -Minutes 2)
+    $settings = New-ScheduledTaskSettingsSet `
+        -MultipleInstances IgnoreNew `
+        -ExecutionTimeLimit (New-TimeSpan -Hours 0) `
+        -RestartCount 3 `
+        -RestartInterval (New-TimeSpan -Minutes 1) `
+        -Hidden
 
-# Run as the interactive user, not SYSTEM.
-# SYSTEM cannot access the user's Wi-Fi session or write to the user's LOCALAPPDATA.
-# RunLevel Limited: the binary needs no admin rights; Highest requires UAC auto-elevation
-# which Task Scheduler cannot perform silently for background interactive tasks.
-$principal = New-ScheduledTaskPrincipal `
-    -UserId ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name) `
-    -LogonType Interactive `
-    -RunLevel Limited
+    $principal = New-ScheduledTaskPrincipal `
+        -UserId $TargetUser `
+        -LogonType Interactive `
+        -RunLevel Limited
 
-# Create task definition
-$taskDef = New-ScheduledTask `
-    -Action    $action `
-    -Settings  $settings `
-    -Principal $principal
+    # Assemble and Register Task
+    $taskDef = New-ScheduledTask -Action $action -Settings $settings -Principal $principal
+    $taskDef.Triggers = [Microsoft.Management.Infrastructure.CimInstance[]]($triggerLogon, $triggerNet)
 
-# Assign triggers
-$taskDef.Triggers = [Microsoft.Management.Infrastructure.CimInstance[]]($triggerLogon, $cimTrigger)
+    if ($existingTask) {
+        Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
+    }
+    
+    Register-ScheduledTask -TaskName $TaskName -InputObject $taskDef | Out-Null
+    Write-Step "Scheduled task '$TaskName' registered (Triggers: Logon, Network Connect)."
 
-# Register task
-Register-ScheduledTask -TaskName $TaskName -InputObject $taskDef -Force | Out-Null
-Write-Step "scheduled task '$TaskName' registered (logon + network-connect triggers)"
+    # Start Task
+    Start-ScheduledTask -TaskName $TaskName
+    Write-Step "Task initiated successfully."
 
+    Write-Host "`nInstallation completed successfully." -ForegroundColor Cyan
+    Write-Host "To verify status, run:"
+    Write-Host "  Get-ScheduledTask -TaskName '$TaskName'"
 
-# Start immediately
-Start-ScheduledTask -TaskName $TaskName
-Start-Sleep -Milliseconds 800
-$info = Get-ScheduledTaskInfo -TaskName $TaskName -ErrorAction SilentlyContinue
-if ($info -and $info.LastTaskResult -ne 0 -and $info.LastRunTime -lt (Get-Date).AddSeconds(-5)) {
-    Write-Fail "Task may not have started cleanly. Check: Get-ScheduledTaskInfo -TaskName '$TaskName'"
-} else {
-    Write-Step "task started"
+} catch {
+    Write-Fail "An unexpected error occurred during execution:"
+    Write-Host $_.Exception.Message -ForegroundColor Red
 }
 
-Write-Host ""
-Write-Host "Done. Check status:"
-Write-Host "  Get-ScheduledTask -TaskName '$TaskName'"
-Write-Host "  Get-ScheduledTaskInfo -TaskName '$TaskName'"
-Write-Host ""
-Write-Host "View logs:"
-Write-Host "  Get-Content -Path '$LogFile' -Tail 50 -Wait"
-Write-Host ""
-Write-Host "Uninstall:"
-Write-Host "  .\install.ps1 -Uninstall"
+# Prevent the elevated window from closing immediately so logs can be reviewed
+Write-Host "`nPress Enter to close this window..."
+Read-Host
