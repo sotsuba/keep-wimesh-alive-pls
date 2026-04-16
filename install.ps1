@@ -5,9 +5,7 @@
 
 .DESCRIPTION
     This script deploys the keep_wimesh_session binary to the user's local AppData
-    directory and registers a Scheduled Task. The task operates entirely in the
-    background (Hidden) without requiring constant Administrator privileges to run,
-    triggering automatically at user logon and upon network connection events.
+    directory and registers a Scheduled Task. 
 
     Self-elevation is handled automatically if the script is not run as Administrator,
     while preserving the original standard user's context (profile paths and username).
