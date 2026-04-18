@@ -5,6 +5,7 @@
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use keep_wimesh_session::platform::select_platform;
 use tracing::info;
 
 use keep_wimesh_session::build_client;
@@ -64,10 +65,9 @@ async fn run_watch(args: WatchArgs) -> Result<()> {
 
 #[cfg(target_os = "windows")]
 async fn run_watch(args: WatchArgs) -> Result<()> {
-    use keep_wimesh_session::watcher::platform::traits::RealRunner;
-    use keep_wimesh_session::watcher::platform::windows::WindowsPlatform;
+    use keep_wimesh_session::platform::windows::WindowsPlatform;
     watcher::run(
-        &WindowsPlatform::new(RealRunner),
+        &WindowsPlatform,
         &args,
         make_shutdown_channel(),
     )

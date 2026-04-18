@@ -1,5 +1,3 @@
-pub mod platform;
-
 use anyhow::Result;
 use reqwest::{Client, redirect::Policy};
 use std::time::Duration;
@@ -9,7 +7,7 @@ use tracing::{info, warn};
 use crate::USER_AGENT_FIREFOX;
 use crate::cli::WatchArgs;
 use crate::strategies::select_strategy;
-use platform::traits::Platform;
+use super::platform::traits::Platform;
 
 pub async fn run(
     platform: &dyn Platform,

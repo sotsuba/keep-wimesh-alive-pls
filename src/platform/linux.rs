@@ -1,4 +1,4 @@
-use crate::watcher::platform::traits::{CommandRunner, LockGuard, Platform, RealRunner};
+use crate::platform::traits::{CommandRunner, LockGuard, Platform, RealRunner};
 use anyhow::{Result, bail};
 use std::fs::{File, OpenOptions};
 use std::os::unix::io::AsRawFd;
@@ -10,17 +10,14 @@ const LOCK_FILE: &str = "/tmp/wimesh_watchdog.lock";
 struct FileLock(File);
 impl LockGuard for FileLock {}
 
-pub struct LinuxPlatform<R: CommandRunner = RealRunner> {
-    runner: R,
-}
+#[derive(Debug)]
+pub struct LinuxPlatform;
 
-impl<R: CommandRunner> LinuxPlatform<R> {
-    pub fn new(runner: R) -> Self {
-        Self { runner }
+impl LinuxPlatform {
+    fn name(&self) -> &'static str {
+        "Linux"
     }
-}
 
-impl<R: CommandRunner> Platform for LinuxPlatform<R> {
     fn detect_ssid(&self) -> Option<String> {
         let output = self
             .runner
@@ -28,7 +25,7 @@ impl<R: CommandRunner> Platform for LinuxPlatform<R> {
         parse_nmcli_output(&output)
     }
 
-    fn default_gateway(&self) -> Option<String> {
+    fn get_wifi_ipv4_address(&self) -> Option<String> {
         let output = self.runner.run("ip", &["-4", "route", "show", "default"])?;
         parse_ip_route_output(&output)
     }
@@ -53,6 +50,11 @@ impl<R: CommandRunner> Platform for LinuxPlatform<R> {
         Ok(Box::new(FileLock(file)))
     }
 }
+
+pub static REGISTRY_ENTRY: super::RegistryPlatform = crate::platform::RegistryPlatform {
+    name: "Linux",
+    factory: || Box::new(LinuxPlatform),
+};
 
 pub(super) fn parse_nmcli_output(output: &str) -> Option<String> {
     // nmcli -t output: "yes:SSID" for active, "no:SSID" for inactive
@@ -138,9 +140,9 @@ mod tests {
     }
 
     #[test]
-    fn default_gateway_via_fake_runner() {
+    fn get_wifi_ipv4_address_via_fake_runner() {
         let p = LinuxPlatform::new(FakeRunner("default via 10.0.0.1 dev eth0\n"));
-        assert_eq!(p.default_gateway(), Some("10.0.0.1".to_string()));
+        assert_eq!(p.get_wifi_ipv4_address(), Some("10.0.0.1".to_string()));
     }
 
     // --- integration (manual only) ---
@@ -154,8 +156,8 @@ mod tests {
 
     #[test]
     #[ignore = "requires Linux with ip command"]
-    fn default_gateway_real() {
+    fn get_wifi_ipv4_address_real() {
         let p = LinuxPlatform::new(RealRunner);
-        println!("Gateway: {:?}", p.default_gateway());
+        println!("Gateway: {:?}", p.get_wifi_ipv4_address());
     }
 }
