@@ -19,7 +19,7 @@ static RE_FIELD_DST: LazyLock<Regex> =
 const HOTSPOT_HOSTNAME: &str = "free.wi-mesh.vn";
 const HOTSPOT_SERVER_ADDR: &str = "172.172.0.1:80";
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct WifiInfo {
     pub raw: Value,
     pub mac: String,
@@ -151,4 +151,24 @@ pub fn build_wifi_info_for_check(w: &WifiInfo) -> Value {
         "route": "/login",
         "is-captive": false
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chap_id_strips_leading_backslash() {
+        assert_eq!(chap_id_to_digits(r"\123"), "123");
+        assert_eq!(chap_id_to_digits("42"), "42");
+        assert_eq!(chap_id_to_digits(""), "");
+    }
+
+    #[test]
+    fn chap_challenge_splits_on_backslash() {
+        assert_eq!(chap_challenge_to_csv(r"\052\173\044"), "052,173,044");
+        assert_eq!(chap_challenge_to_csv(r"\1"), "1");
+        // leading and trailing backslashes produce no empty parts
+        assert_eq!(chap_challenge_to_csv(r"\052\"), "052");
+    }
 }

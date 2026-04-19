@@ -1,59 +1,57 @@
 use crate::strategies::LoginStrategy;
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, bail};
 use reqwest::Client;
-use tracing::info;
+use reqwest::header::{HeaderValue, ORIGIN};
+use serde::Deserialize;
 
-const PORTAL_DETECT_URL: &str = "http://detectportal.firefox.com/canonical.html";
-const PORTAL_LOGON_PATH: &str = "/api/captiveportal/access/logon/";
+const CAPTIVE_PORT: u16 = 8001;
 
-async fn detect_portal_origin(client: &Client) -> Result<String> {
-    let resp = client.get(PORTAL_DETECT_URL).send().await?;
-    let url = resp.url();
-
-    // Captive portal redirects probe URL away from original host
-    if url.host_str() == Some("detectportal.firefox.com") {
-        return Err(anyhow!(
-            "No captive portal detected or already authenticated"
-        ));
-    }
-
-    let host = url
-        .host_str()
-        .ok_or_else(|| anyhow!("No host in redirect URL"))?;
-    let mut origin = format!("{}://{}", url.scheme(), host);
-    if let Some(port) = url.port() {
-        origin.push_str(&format!(":{}", port));
-    }
-    Ok(origin)
+pub struct HcmusStrategy {
+    base_url: String,
 }
-
-pub struct HcmusStrategy;
 
 pub static REGISTRY_ENTRY: super::RegistryStrategy = super::RegistryStrategy {
     name: "HCMUS",
     predicate: |ssid| ssid.contains("HCMUS"),
-    factory: || Box::new(HcmusStrategy),
+    factory: |platform| {
+        let ip = platform
+            .default_gateway_ipv4()
+            .context("could not determine Wi-Fi gateway IP address")?;
+        Ok(Box::new(HcmusStrategy {
+            base_url: format!("http://{}:{}", ip, CAPTIVE_PORT),
+        }))
+    },
 };
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LogonResponse {
+    client_state: String,
+}
 
 #[async_trait::async_trait]
 impl LoginStrategy for HcmusStrategy {
     async fn login(&self, client: &Client) -> Result<()> {
-        let origin = detect_portal_origin(client).await?;
-        let logon_url = format!("{}{}", origin, PORTAL_LOGON_PATH);
-        let referer = format!(
-            "{}/index.html?redirurl=detectportal.firefox.com/canonical.html",
-            origin
-        );
+        let origin =
+            HeaderValue::from_str(&self.base_url).context("invalid base URL for Origin header")?;
 
-        let resp = client
+        let logon_url = format!("{}/api/captiveportal/access/logon/", self.base_url);
+        let resp: LogonResponse = client
             .post(&logon_url)
+            .header(ORIGIN, origin)
             .header("X-Requested-With", "XMLHttpRequest")
-            .header("Origin", &origin)
-            .header("Referer", &referer)
             .form(&[("user", ""), ("password", "")])
             .send()
-            .await?;
-        info!("{}", resp.status());
-        Ok(())
+            .await
+            .context("logon request failed")?
+            .json()
+            .await
+            .context("logon response is not valid JSON")?;
+
+        if resp.client_state == "AUTHORIZED" {
+            Ok(())
+        } else {
+            bail!("logon failed: clientState = {}", resp.client_state);
+        }
     }
 }

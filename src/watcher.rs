@@ -1,5 +1,3 @@
-pub mod platform;
-
 use anyhow::Result;
 use reqwest::{Client, redirect::Policy};
 use std::time::Duration;
@@ -8,14 +6,11 @@ use tracing::{info, warn};
 
 use crate::USER_AGENT_FIREFOX;
 use crate::cli::WatchArgs;
-use crate::strategies::select_strategy;
-use platform::traits::Platform;
+use crate::platform::Platform;
+use crate::strategies::session::LoginSession;
 
-pub async fn run(
-    platform: &dyn Platform,
-    args: &WatchArgs,
-    mut shutdown: watch::Receiver<bool>,
-) -> Result<()> {
+pub async fn run(platform: &dyn Platform, args: &WatchArgs) -> Result<()> {
+    let mut shutdown = make_shutdown_channel();
     let _lock = platform.acquire_lock()?;
     info!(check_url = %args.check_url, "watchdog started");
 
@@ -49,7 +44,7 @@ pub async fn run(
         };
 
         info!(ssid, "connectivity lost; re-authenticating");
-        match do_login(&ssid).await {
+        match do_login(platform, &ssid).await {
             Ok(_) => {
                 login_fail_count = 0;
                 info!(ssid, "login succeeded");
@@ -82,6 +77,15 @@ pub async fn run(
     Ok(())
 }
 
+fn make_shutdown_channel() -> tokio::sync::watch::Receiver<bool> {
+    let (tx, rx) = tokio::sync::watch::channel(false);
+    tokio::spawn(async move {
+        let _ = tokio::signal::ctrl_c().await;
+        let _ = tx.send(true);
+    });
+    rx
+}
+
 /// Sleep for `duration`, but return early if a shutdown signal arrives.
 async fn sleep_or_shutdown(duration: Duration, shutdown: &mut watch::Receiver<bool>) {
     tokio::select! {
@@ -99,10 +103,8 @@ async fn check_204(client: &Client, url: &str) -> bool {
         .unwrap_or(false)
 }
 
-async fn do_login(ssid: &str) -> Result<()> {
-    let strategy = select_strategy(ssid)?;
-    let client = super::build_client(strategy.as_ref())?;
-    strategy.login(&client).await
+async fn do_login(platform: &dyn Platform, ssid: &str) -> Result<()> {
+    LoginSession::for_ssid(ssid, platform)?.login().await
 }
 
 fn next_backoff(fail_count: u32, base_secs: u64, max_secs: u64) -> Duration {
