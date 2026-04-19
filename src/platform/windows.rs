@@ -37,7 +37,7 @@ impl Platform for WindowsPlatform {
             .map(|s| s.trim().to_string())
     }
 
-    fn get_wifi_ipv4_address(&self) -> Option<String> {
+    fn default_gateway_ipv4(&self) -> Option<String> {
         self.run_command("ipconfig", &[])?.lines().find_map(|line| {
             let (key, value) = line.split_once(':')?;
 

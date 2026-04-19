@@ -29,7 +29,7 @@ impl Platform for LinuxPlatform {
             .unwrap_or(None)
     }
 
-    fn get_wifi_ipv4_address(&self) -> Option<String> {
+    fn default_gateway_ipv4(&self) -> Option<String> {
         self.run_command("ip", &["-4", "route", "show", "default"])
             .map(|output| {
                 output

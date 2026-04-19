@@ -15,7 +15,7 @@ pub static REGISTRY_ENTRY: super::RegistryStrategy = super::RegistryStrategy {
     predicate: |ssid| ssid.contains("HCMUS"),
     factory: |platform| {
         let ip = platform
-            .get_wifi_ipv4_address()
+            .default_gateway_ipv4()
             .context("could not determine Wi-Fi gateway IP address")?;
         Ok(Box::new(HcmusStrategy {
             base_url: format!("http://{}:{}", ip, CAPTIVE_PORT),

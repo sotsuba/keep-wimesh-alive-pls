@@ -46,7 +46,7 @@ mod tests {
         fn detect_ssid(&self) -> Option<String> {
             None
         }
-        fn get_wifi_ipv4_address(&self) -> Option<String> {
+        fn default_gateway_ipv4(&self) -> Option<String> {
             Some("127.0.0.1".to_string())
         }
         fn ping_gateway(&self, _addr: &str) -> bool {
