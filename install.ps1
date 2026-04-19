@@ -6,13 +6,10 @@
 .DESCRIPTION
     This script deploys the keep_wimesh_session binary to the user's local AppData
     directory and registers a Scheduled Task. 
-<<<<<<< Updated upstream
 
     Self-elevation is handled automatically if the script is not run as Administrator,
     while preserving the original standard user's context (profile paths and username).
 
-=======
->>>>>>> Stashed changes
 .EXAMPLE
     .\install.ps1
     Installs or updates the binary and scheduled task.
@@ -61,7 +58,6 @@ if (-not $isAdministrator) {
 # ==============================================================================
 # 2. CONFIGURATION & VARIABLES
 # ==============================================================================
-<<<<<<< Updated upstream
 $TaskName       = "captive-login"
 $BinaryName     = "keep_wimesh_session.exe"
 $BinaryBaseName = "keep_wimesh_session"
@@ -105,46 +101,6 @@ try {
             Write-Step "Directory '$InstallDir' removed."
         }
 
-=======
-$TaskName   = "captive-login"
-$InstallDir = Join-Path -Path $TargetLocalAppData -ChildPath "wimesh"
-$BinarySrc  = Join-Path -Path $PSScriptRoot -ChildPath "target\release\keep_wimesh_session.exe"
-$BinaryDest = Join-Path -Path $InstallDir -ChildPath "keep_wimesh_session.exe"
-$BinaryName = [System.IO.Path]::GetFileNameWithoutExtension($BinaryDest)
-
-function Write-Step ([string]$Message) { Write-Host "  [OK] $Message" -ForegroundColor Green }
-function Write-Fail ([string]$Message) { Write-Host "  [!!] $Message" -ForegroundColor Red }
-
-# ==============================================================================
-# 3. MAIN EXECUTION
-# ==============================================================================
-try {
-    # --------------------------------------------------------------------------
-    # UNINSTALLATION PATH
-    # --------------------------------------------------------------------------
-    if ($Uninstall) {
-        Write-Host "Starting uninstallation for user: $TargetUser"
-
-        $existingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-        if ($existingTask) {
-            Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-            Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
-            Write-Step "Scheduled task '$TaskName' removed."
-        }
-
-        # Kill any lingering processes before deleting directory
-        $process = Get-Process -Name $BinaryName -ErrorAction SilentlyContinue
-        if ($process) {
-            $process | Stop-Process -Force
-            $process | Wait-Process -Timeout 5 -ErrorAction SilentlyContinue
-        }
-
-        if (Test-Path $InstallDir) {
-            Remove-Item -Path $InstallDir -Recurse -Force
-            Write-Step "Directory '$InstallDir' removed."
-        }
-
->>>>>>> Stashed changes
         Write-Host "`nUninstallation completed successfully." -ForegroundColor Cyan
         Read-Host "Press Enter to exit"
         exit 0
@@ -156,12 +112,7 @@ try {
     Write-Host "Starting installation for user: $TargetUser"
 
     if (-not (Test-Path $BinarySrc)) {
-<<<<<<< Updated upstream
         Write-Fail "Binary not found. Please ensure '$BinaryName' is in the same folder as this script."
-=======
-        Write-Fail "Source binary not found at: $BinarySrc"
-        Write-Host "Ensure you have compiled the project: cargo build --release" -ForegroundColor Yellow
->>>>>>> Stashed changes
         Read-Host "Press Enter to exit"
         exit 1
     }
@@ -172,11 +123,7 @@ try {
         Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
     }
     
-<<<<<<< Updated upstream
     $process = Get-Process -Name $BinaryBaseName -ErrorAction SilentlyContinue
-=======
-    $process = Get-Process -Name $BinaryName -ErrorAction SilentlyContinue
->>>>>>> Stashed changes
     if ($process) {
         $process | Stop-Process -Force
         $process | Wait-Process -Timeout 5 -ErrorAction SilentlyContinue
@@ -245,11 +192,6 @@ try {
     Write-Host $_.Exception.Message -ForegroundColor Red
 }
 
-<<<<<<< Updated upstream
 # Prevent the elevated window from closing immediately so logs can be reviewed
 Write-Host "`nPress Enter to close this window..."
 Read-Host
-=======
-Write-Host "`nPress Enter to close this window..."
-Read-Host
->>>>>>> Stashed changes
