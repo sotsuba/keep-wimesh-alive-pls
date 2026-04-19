@@ -6,7 +6,7 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
-echo "Uninstalling keep_wimesh_session..."
+echo "Uninstalling captive_portal..."
 
 if systemctl is-active --quiet captive-login.service; then
     systemctl stop captive-login.service
@@ -20,7 +20,7 @@ fi
 
 for F in \
     /etc/systemd/system/captive-login.service \
-    /usr/local/bin/keep_wimesh_session \
+    /usr/local/bin/captive_portal \
     /tmp/wimesh_watchdog.lock
 do
     if [[ -f "$F" ]]; then

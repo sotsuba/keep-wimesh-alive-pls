@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/keep_wimesh_session watch
+ExecStart=/usr/local/bin/captive_portal watch
 Restart=always
 RestartSec=2
 StandardOutput=journal

@@ -5,12 +5,11 @@
 
 use anyhow::Result;
 use clap::Parser;
-use keep_wimesh_session::platform::select_platform;
-use tracing::info;
 
-use keep_wimesh_session::cli::{Cli, Command};
-use keep_wimesh_session::strategies::session::LoginSession;
-use keep_wimesh_session::watcher;
+use captive_portal::cli::{Cli, Command};
+use captive_portal::platform::select_platform;
+use captive_portal::strategies::client::LoginSession;
+use captive_portal::watch;
 
 fn setup_log() {
     use std::io::IsTerminal;
@@ -31,13 +30,11 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Command::Login(args) => {
-            info!("selected strategy for SSID '{}'", args.ssid);
             LoginSession::for_ssid(&args.ssid, platform.as_ref())?
                 .login()
                 .await?;
         }
-        Command::Watch(args) => watcher::run(platform.as_ref(), &args).await?,
+        Command::Watch(args) => watch::run(platform.as_ref(), &args).await?,
     }
-
     Ok(())
 }

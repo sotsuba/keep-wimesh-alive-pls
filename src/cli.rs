@@ -1,7 +1,7 @@
 use clap::{Args, Parser, Subcommand};
 
 #[derive(Parser, Debug)]
-#[command(name = "keep_wimesh_session")]
+#[command(name = "captive_portal")]
 #[command(about = "Automate hotspot login flow")]
 pub struct Cli {
     #[command(subcommand)]
@@ -32,11 +32,11 @@ pub struct WatchArgs {
     pub check_url: String,
 
     /// Seconds between connectivity checks.
-    #[arg(long, default_value_t = 5)]
+    #[arg(long, default_value_t = 3, env = "WIMESH_CHECK_INTERVAL")]
     pub check_interval: u64,
 
     /// Seconds to wait after a successful login before the next check.
-    #[arg(long, default_value_t = 5)]
+    #[arg(long, default_value_t = 3, env = "WIMESH_POST_LOGIN_WAIT")]
     pub post_login_wait: u64,
 
     /// Base retry backoff in seconds (doubles on each consecutive failure).

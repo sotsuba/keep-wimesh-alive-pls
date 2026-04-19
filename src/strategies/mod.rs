@@ -1,9 +1,9 @@
+pub mod awing_utils;
+pub mod client;
 pub mod error;
 pub mod hcmus;
 pub mod highland;
-pub mod session;
 pub mod traits;
-pub mod utils;
 pub mod wimesh;
 
 use anyhow::Result;
@@ -19,17 +19,20 @@ pub struct RegistryStrategy {
     pub factory: fn(&dyn Platform) -> Result<Box<dyn LoginStrategy>>,
 }
 
-static REGISTRY: &[RegistryStrategy] = &[
+static LOGIN_REGISTRY: &[RegistryStrategy] = &[
     hcmus::REGISTRY_ENTRY,
     highland::REGISTRY_ENTRY,
     wimesh::REGISTRY_ENTRY,
 ];
 
-pub fn select_strategy(ssid: &str, platform: &dyn Platform) -> Result<Box<dyn LoginStrategy>> {
-    let entry = REGISTRY
+pub fn select_login_strategy(
+    ssid: &str,
+    platform: &dyn Platform,
+) -> Result<Box<dyn LoginStrategy>> {
+    let entry = LOGIN_REGISTRY
         .iter()
         .find(|entry| (entry.predicate)(ssid))
-        .ok_or_else(|| StrategyError::UnknownSSID(ssid.to_string()))?;
+        .ok_or_else(|| StrategyError::UnknownSsid(ssid.to_string()))?;
     (entry.factory)(platform)
 }
 
@@ -61,39 +64,39 @@ mod tests {
 
     #[test]
     fn hcmus_student_ssid() {
-        assert!(select_strategy("HCMUS-STUDENT", &NULL).is_ok());
+        assert!(select_login_strategy("HCMUS-STUDENT", &NULL).is_ok());
     }
 
     #[test]
     fn hcmus_public_ssid() {
-        assert!(select_strategy("HCMUS-PUBLIC", &NULL).is_ok());
+        assert!(select_login_strategy("HCMUS-PUBLIC", &NULL).is_ok());
     }
 
     #[test]
     fn highland_ssid() {
-        assert!(select_strategy("Highlands Coffee", &NULL).is_ok());
+        assert!(select_login_strategy("Highlands Coffee", &NULL).is_ok());
     }
 
     #[test]
     fn wimesh_ssid() {
-        assert!(select_strategy("1.Free Wi-MESH", &NULL).is_ok());
-        assert!(select_strategy("Free Wi-MESH rescuse", &NULL).is_ok());
+        assert!(select_login_strategy("1.Free Wi-MESH", &NULL).is_ok());
+        assert!(select_login_strategy("Free Wi-MESH rescuse", &NULL).is_ok());
     }
 
     #[test]
     fn unknown_ssid_returns_error() {
-        let result = select_strategy("Starbucks-Guest", &NULL);
+        let result = select_login_strategy("Starbucks-Guest", &NULL);
         assert!(result.is_err());
     }
 
     #[test]
     fn empty_ssid_returns_error() {
-        assert!(select_strategy("", &NULL).is_err());
+        assert!(select_login_strategy("", &NULL).is_err());
     }
 
     #[test]
     fn registry_names_are_unique() {
-        let mut names: Vec<&str> = REGISTRY.iter().map(|e| e.name).collect();
+        let mut names: Vec<&str> = LOGIN_REGISTRY.iter().map(|e| e.name).collect();
         let original_len = names.len();
         names.sort_unstable();
         names.dedup();
@@ -102,7 +105,7 @@ mod tests {
 
     #[test]
     fn first_match_wins() {
-        let r = select_strategy("HCMUS-PUBLIC", &NULL);
+        let r = select_login_strategy("HCMUS-PUBLIC", &NULL);
         assert!(r.is_ok());
     }
 }

@@ -1,7 +1,9 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use reqwest::Client;
 use reqwest::header::{HeaderName, HeaderValue, ORIGIN, REFERER};
 use serde_json::Value;
+
+use crate::strategies::error::StrategyError;
 
 pub const AWING_VERIFY_URL: &str = "http://v1.awingconnect.vn/Home/VerifyUrl";
 pub const AWING_ORIGIN: &str = "http://v1.awingconnect.vn";
@@ -32,7 +34,11 @@ pub async fn call_verify_url(client: &Client, awing_url: &str) -> Result<VerifyU
         .context("VerifyUrl request failed")?;
 
     if !response.status().is_success() {
-        bail!("VerifyUrl returned status {}", response.status());
+        return Err(StrategyError::UnexpectedStatus {
+            endpoint: "VerifyUrl",
+            status: response.status(),
+        }
+        .into());
     }
 
     let payload: Value = response
@@ -65,7 +71,11 @@ pub async fn load_awing_portal(
     }
     let response = req.send().await.context("failed to load awing portal")?;
     if !response.status().is_success() {
-        bail!("awing portal returned status {}", response.status());
+        return Err(StrategyError::UnexpectedStatus {
+            endpoint: "awing portal",
+            status: response.status(),
+        }
+        .into());
     }
     Ok(())
 }

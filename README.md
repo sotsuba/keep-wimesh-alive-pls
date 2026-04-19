@@ -1,4 +1,4 @@
-# keep_wimesh_session
+# captive_portal
 
 **Hotspot được hỗ trợ:**
 
@@ -24,7 +24,7 @@ Tải bản dựng sẵn từ [Releases](../../releases/latest) — không cần
 **GNU/Linux**
 
 ```bash
-tar -xzf keep_wimesh_session-linux-x86_64.tar.gz
+tar -xzf captive_portal-linux-x86_64.tar.gz
 # Cài đặt
 sudo ./install.sh
 # Gỡ cài đặt
@@ -41,7 +41,7 @@ journalctl -t captive-login -f
 **Windows**
 
 ```powershell
-Expand-Archive keep_wimesh_session-windows-x86_64.zip .
+Expand-Archive captive_portal-windows-x86_64.zip .
 .\install.ps1
 # Gỡ cài đặt
 .\install.ps1 -Uninstall

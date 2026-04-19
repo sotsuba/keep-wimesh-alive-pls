@@ -1,7 +1,9 @@
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result};
 use regex::Regex;
 use reqwest::Url;
 use std::sync::LazyLock;
+
+use crate::strategies::error::StrategyError;
 
 static RE_PORT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"var\s+port\s*=\s*(\d+)").unwrap());
 static RE_POST_URL: LazyLock<Regex> =
@@ -13,7 +15,13 @@ pub fn query_param(url: &str, key: &str) -> Result<String> {
         .query_pairs()
         .find(|(k, _)| k == key)
         .map(|(_, v)| v.to_string())
-        .ok_or_else(|| anyhow!("missing query param: {key}"))
+        .ok_or_else(|| {
+            StrategyError::MissingField {
+                field: key.to_string(),
+                location: "URL query",
+            }
+            .into()
+        })
 }
 
 /// Extract the `Qv` parameter from a Highland Coffee awing URL.
@@ -28,7 +36,10 @@ pub fn extract_qv_param(url: &str) -> Result<String> {
     let marker = "Qv=";
     let pos = query
         .find(marker)
-        .ok_or_else(|| anyhow!("missing Qv parameter in URL"))?;
+        .ok_or_else(|| StrategyError::MissingField {
+            field: "Qv".to_string(),
+            location: "URL query",
+        })?;
     let after = &query[pos + marker.len()..];
     // Qv is always the last query parameter in the Highland URL; no '&' follows.
     // If one ever does appear, stop there so we don't bleed into the next param.

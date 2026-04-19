@@ -1,10 +1,10 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Manages the installation and uninstallation of the keep_wimesh_session background task.
+    Manages the installation and uninstallation of the captive_portal background task.
 
 .DESCRIPTION
-    This script deploys the keep_wimesh_session binary to the user's local AppData
+    This script deploys the captive_portal binary to the user's local AppData
     directory and registers a Scheduled Task. 
 
     Self-elevation is handled automatically if the script is not run as Administrator,
@@ -59,8 +59,8 @@ if (-not $isAdministrator) {
 # 2. CONFIGURATION & VARIABLES
 # ==============================================================================
 $TaskName       = "captive-login"
-$BinaryName     = "keep_wimesh_session.exe"
-$BinaryBaseName = "keep_wimesh_session"
+$BinaryName     = "captive_portal.exe"
+$BinaryBaseName = "captive_portal"
 $InstallDir     = Join-Path -Path $TargetLocalAppData -ChildPath "wimesh"
 $BinaryDest     = Join-Path -Path $InstallDir -ChildPath $BinaryName
 
