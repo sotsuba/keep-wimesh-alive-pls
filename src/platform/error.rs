@@ -1,17 +1,6 @@
-use std::fmt;
-
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum PlatformError {
+    #[error("Unsupported platform")]
     UnsupportedPlatform,
 }
-
-impl fmt::Display for PlatformError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PlatformError::UnsupportedPlatform => write!(f, "Unsupported platform"),
-        }
-    }
-}
-
-impl std::error::Error for PlatformError {}

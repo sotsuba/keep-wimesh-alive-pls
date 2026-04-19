@@ -1,7 +1,7 @@
 pub mod cli;
+pub mod platform;
 pub mod strategies;
 pub mod watcher;
-pub mod platform; 
 
 #[cfg(target_os = "linux")]
 pub const USER_AGENT_FIREFOX: &str =

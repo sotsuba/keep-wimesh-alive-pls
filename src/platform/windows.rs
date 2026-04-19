@@ -1,5 +1,4 @@
 use super::traits::{LockGuard, Platform};
-use crate::platform::run_command;
 
 use anyhow::{Result, bail};
 use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, WAIT_ABANDONED, WAIT_OBJECT_0};
@@ -31,7 +30,7 @@ impl Platform for WindowsPlatform {
     }
 
     fn detect_ssid(&self) -> Option<String> {
-        run_command("netsh", &["wlan", "show", "interfaces"])?
+        self.run_command("netsh", &["wlan", "show", "interfaces"])?
             .lines()
             .find(|l| l.trim().starts_with("SSID"))
             .and_then(|l| l.split_once(':').map(|x| x.1))
@@ -39,11 +38,9 @@ impl Platform for WindowsPlatform {
     }
 
     fn get_wifi_ipv4_address(&self) -> Option<String> {
-        run_command("ipconfig", &[])?
-        .lines()
-        .find_map(|line| {
+        self.run_command("ipconfig", &[])?.lines().find_map(|line| {
             let (key, value) = line.split_once(':')?;
-            
+
             if key.contains("Default Gateway") {
                 let ip = value.trim();
                 if !ip.is_empty() {
@@ -55,7 +52,7 @@ impl Platform for WindowsPlatform {
     }
 
     fn ping_gateway(&self, addr: &str) -> bool {
-        run_command("ping", &["-n", "1", "-w", "1000", addr])
+        self.run_command("ping", &["-n", "1", "-w", "1000", addr])
             .map(|o| o.contains("TTL=")) // "TTL=" is present in successful ping replies on Windows.
             .unwrap_or(false)
     }
@@ -87,7 +84,6 @@ impl Platform for WindowsPlatform {
         Ok(Box::new(MutexLock(handle)))
     }
 }
-
 
 pub static REGISTRY_ENTRY: super::PlatformRegistry = crate::platform::PlatformRegistry {
     factory: || Box::new(WindowsPlatform),

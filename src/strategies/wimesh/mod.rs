@@ -1,26 +1,24 @@
 use super::LoginStrategy;
 pub mod parse;
 
+// All Wi-MESH hotspot URLs share the same origin.
 const HOTSPOT_ORIGIN: &str = "http://free.wi-mesh.vn";
 const HOTSPOT_BASE: &str = "http://free.wi-mesh.vn/";
 const HOTSPOT_CONFIG_URL: &str = "http://free.wi-mesh.vn/config.json";
 const HOTSPOT_LOGIN_URL: &str = "http://free.wi-mesh.vn/login";
-const AWING_VERIFY_URL: &str = "http://v1.awingconnect.vn/Home/VerifyUrl";
-const AWING_ORIGIN: &str = "http://v1.awingconnect.vn";
-const AWING_REFERER: &str = "http://v1.awingconnect.vn/";
 const FALLBACK_SERVER: &str = "https://ex.login.net.vn";
-use super::utils::{load_awing_portal, run_step};
+
+use super::utils::{AWING_ORIGIN, AWING_REFERER, call_verify_url, load_awing_portal, run_step};
 use crate::strategies::wimesh::parse::{
     build_wifi_info_for_check, parse_login_form, parse_wifi_info,
 };
 use anyhow::{Context, Result, bail};
 use reqwest::cookie::Jar;
-use reqwest::header::{HeaderName, HeaderValue, ORIGIN, REFERER};
+use reqwest::header::{HeaderValue, ORIGIN, REFERER};
 use reqwest::{Client, StatusCode};
 use serde_json::{Value, json};
 use std::sync::Arc;
-use tracing::info;
-use tracing::warn;
+use tracing::{info, warn};
 
 pub struct KtxWiMeshStrategy {
     jar: Arc<Jar>,
@@ -29,10 +27,11 @@ pub struct KtxWiMeshStrategy {
 pub static REGISTRY_ENTRY: super::RegistryStrategy = crate::strategies::RegistryStrategy {
     name: "KTX Wi-MESH",
     predicate: |ssid| ssid.contains("Free Wi-MESH"),
-    factory: || Box::new(KtxWiMeshStrategy::new()),
+    factory: |_platform| Ok(Box::new(KtxWiMeshStrategy::new())),
 };
 
 impl KtxWiMeshStrategy {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
             jar: Arc::new(Jar::default()),
@@ -40,22 +39,16 @@ impl KtxWiMeshStrategy {
     }
 }
 
-impl Default for KtxWiMeshStrategy {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[async_trait::async_trait]
 impl LoginStrategy for KtxWiMeshStrategy {
     async fn login(&self, client: &Client) -> Result<()> {
-        let (first_wifi, wifi) = run_step(
+        let wifi = run_step(
             "step1+2: probe hotspot and load login page",
             probe_hotspot(client),
         )
         .await?;
 
-        let body = build_check_body(&first_wifi, &wifi);
+        let body = build_check_body(&wifi);
 
         let awing_url = run_step(
             "step3: api-connect/check → awing URL",
@@ -69,19 +62,20 @@ impl LoginStrategy for KtxWiMeshStrategy {
         )
         .await?;
 
-        let (_, form_html) = run_step(
-            "step5: VerifyUrl -> token + pre-filled login form",
-            step_verify_url(client, &awing_url),
+        let form_html = run_step(
+            "step5: VerifyUrl -> pre-filled login form",
+            call_verify_url(client, &awing_url),
         )
-        .await?;
+        .await?
+        .form_html
+        .context("VerifyUrl did not return contentAuthenForm")?;
 
-        let form_html = form_html.context("VerifyUrl did not return contentAuthenForm")?;
         info!("step6: credentials from VerifyUrl response");
         let (username, password, dst) = parse_login_form(&form_html)?;
 
         run_step(
             "step7: POST final MikroTik login",
-            step_post_login(client, &username, &password, &dst),
+            post_login(client, &username, &password, &dst),
         )
         .await?;
 
@@ -124,10 +118,8 @@ async fn try_fetch_server_list(client: &Client) -> Option<Vec<String>> {
     }
 }
 
-/// Step 1+2: Load the hotspot login page directly.
-/// Returns `(first_wifi, wifi)` — both parsed from the same page;
-/// first_wifi.mac-esc is used for device_id, wifi for the api-connect/check body.
-async fn probe_hotspot(client: &Client) -> Result<(parse::WifiInfo, parse::WifiInfo)> {
+/// Step 1+2: Load the hotspot login page directly and parse Wi-Fi info.
+async fn probe_hotspot(client: &Client) -> Result<parse::WifiInfo> {
     let html = client
         .get(HOTSPOT_BASE)
         .send()
@@ -137,19 +129,18 @@ async fn probe_hotspot(client: &Client) -> Result<(parse::WifiInfo, parse::WifiI
         .await
         .context("failed reading hotspot page")?;
 
-    let wifi = parse_wifi_info(&html)?;
-    Ok((wifi.clone(), wifi))
+    parse_wifi_info(&html)
 }
 
 /// Build the JSON body for api-connect/check from probed wifi info.
-fn build_check_body(first_wifi: &parse::WifiInfo, wifi: &parse::WifiInfo) -> Value {
-    let device_id = first_wifi
+fn build_check_body(wifi: &parse::WifiInfo) -> Value {
+    let device_id = wifi
         .raw
         .get("mac-esc")
         .and_then(Value::as_str)
         .map(|m| m.replace("%3A", "").to_uppercase())
         .filter(|v| !v.is_empty())
-        .unwrap_or_else(|| first_wifi.mac.replace(':', "").to_uppercase());
+        .unwrap_or_else(|| wifi.mac.replace(':', "").to_uppercase());
 
     json!({
         "device": {
@@ -212,56 +203,16 @@ async fn call_api_connect_check(client: &Client, body: &Value, jar: &Jar) -> Res
 
     // Inject the fresh token so the final POST to free.wi-mesh.vn sends it automatically.
     if let Some(token) = payload.pointer("/data/token").and_then(Value::as_str) {
-        let url = HOTSPOT_BASE.parse::<reqwest::Url>().unwrap();
+        let url = HOTSPOT_BASE
+            .parse::<reqwest::Url>()
+            .expect("HOTSPOT_BASE is a valid URL");
         jar.add_cookie_str(&format!("hotspot_wm_token={token}"), &url);
     }
 
     Ok(awing_url)
 }
 
-/// Returns (token, Option<contentAuthenForm HTML>)
-async fn step_verify_url(client: &Client, awing_url: &str) -> Result<(String, Option<String>)> {
-    let response = client
-        .post(AWING_VERIFY_URL)
-        .header(
-            HeaderName::from_static("x-requested-with"),
-            HeaderValue::from_static("XMLHttpRequest"),
-        )
-        .header(ORIGIN, HeaderValue::from_static(AWING_ORIGIN))
-        .header(
-            REFERER,
-            HeaderValue::from_str(awing_url).context("invalid awing URL for Referer")?,
-        )
-        .header("Content-Length", "0")
-        .send()
-        .await
-        .context("VerifyUrl request failed")?;
-
-    if !response.status().is_success() {
-        bail!("VerifyUrl returned status {}", response.status());
-    }
-
-    let payload: Value = response
-        .json()
-        .await
-        .context("VerifyUrl response is not JSON")?;
-
-    let token = payload
-        .get("token")
-        .and_then(Value::as_str)
-        .map(ToOwned::to_owned)
-        .context("VerifyUrl response missing token")?;
-
-    let form_html = payload
-        .pointer("/captiveContext/contentAuthenForm")
-        .and_then(Value::as_str)
-        .filter(|s| !s.is_empty())
-        .map(ToOwned::to_owned);
-
-    Ok((token, form_html))
-}
-
-async fn step_post_login(client: &Client, username: &str, password: &str, dst: &str) -> Result<()> {
+async fn post_login(client: &Client, username: &str, password: &str, dst: &str) -> Result<()> {
     let response = client
         .post(HOTSPOT_LOGIN_URL)
         .header(ORIGIN, HeaderValue::from_static(AWING_ORIGIN))
