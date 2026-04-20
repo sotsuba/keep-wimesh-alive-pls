@@ -80,7 +80,7 @@ mod tests {
     #[test]
     fn wimesh_ssid() {
         assert!(select_login_strategy("1.Free Wi-MESH", &NULL).is_ok());
-        assert!(select_login_strategy("Free Wi-MESH rescuse", &NULL).is_ok());
+        assert!(select_login_strategy("Free Wi-MESH rescue", &NULL).is_ok());
     }
 
     #[test]

@@ -16,8 +16,7 @@ pub fn build_client(strategy: Option<&dyn LoginStrategy>) -> anyhow::Result<reqw
     let mut builder = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::limited(10))
         .timeout(std::time::Duration::from_secs(20))
-        .user_agent(USER_AGENT_FIREFOX)
-        .danger_accept_invalid_certs(true);
+        .user_agent(USER_AGENT_FIREFOX);
 
     if let Some(s) = strategy
         && let Some(jar) = s.cookie_jar()
