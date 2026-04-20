@@ -1,5 +1,7 @@
+use crate::platform::error::PlatformError;
 use crate::strategies::LoginStrategy;
-use anyhow::{Context, Result, bail};
+use crate::strategies::error::StrategyError;
+use anyhow::{Context, Result};
 use reqwest::Client;
 use reqwest::header::{HeaderValue, ORIGIN};
 use serde::Deserialize;
@@ -16,7 +18,7 @@ pub static REGISTRY_ENTRY: super::RegistryStrategy = super::RegistryStrategy {
     factory: |platform| {
         let ip = platform
             .default_gateway_ipv4()
-            .context("could not determine Wi-Fi gateway IP address")?;
+            .ok_or(PlatformError::NoGateway)?;
         Ok(Box::new(HcmusStrategy {
             base_url: format!("http://{}:{}", ip, CAPTIVE_PORT),
         }))
@@ -51,7 +53,11 @@ impl LoginStrategy for HcmusStrategy {
         if resp.client_state == "AUTHORIZED" {
             Ok(())
         } else {
-            bail!("logon failed: clientState = {}", resp.client_state);
+            Err(StrategyError::LoginRejected {
+                context: "HCMUS logon",
+                detail: format!("clientState = {}", resp.client_state),
+            }
+            .into())
         }
     }
 }

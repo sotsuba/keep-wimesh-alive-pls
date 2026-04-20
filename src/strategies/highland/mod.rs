@@ -3,12 +3,15 @@ pub mod parse;
 const PROBE_URL: &str = "http://login.net.vn/";
 
 use super::LoginStrategy;
-use super::utils::{AWING_ORIGIN, AWING_REFERER, call_verify_url, load_awing_portal, run_step};
+use super::awing_utils::{
+    AWING_ORIGIN, AWING_REFERER, call_verify_url, load_awing_portal, run_step,
+};
+use crate::strategies::error::StrategyError;
 use crate::strategies::highland::parse::{
     extract_qv_param, parse_highland_script_params, query_param,
 };
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use reqwest::Client;
 use reqwest::header::{HeaderValue, ORIGIN, REFERER};
 use tracing::info;
@@ -16,7 +19,7 @@ use tracing::info;
 pub struct HighlandStrategy;
 
 pub static REGISTRY_ENTRY: super::RegistryStrategy = crate::strategies::RegistryStrategy {
-    name: "Highland Coffee",
+    name: "Highlands Coffee",
     predicate: |ssid| ssid.contains("Highlands Coffee"),
     factory: |_platform| Ok(Box::new(HighlandStrategy)),
 };
@@ -60,13 +63,13 @@ impl LoginStrategy for HighlandStrategy {
 /// without going through the MikroTik hotspot page. The final URL is the
 /// awing URL and contains all parameters needed for the rest of the flow.
 async fn probe_redirect(client: &Client) -> Result<String> {
-    let response = client
+    let resp = client
         .get(PROBE_URL)
         .send()
         .await
         .context("probe request to login.net.vn failed")?;
 
-    let awing_url = response.url().to_string();
+    let awing_url = resp.url().to_string();
     info!("awing URL: {}", awing_url);
     Ok(awing_url)
 }
@@ -78,8 +81,8 @@ async fn probe_redirect(client: &Client) -> Result<String> {
 /// - `port` and `postToUrl` come from the `<script>` in the form HTML, with
 ///   sane defaults (880 / "/cgi-bin/hslogin.cgi") if parsing fails.
 fn extract_login_params(awing_url: &str, form_html: &str) -> Result<(String, String, String)> {
-    let hs_server = query_param(awing_url, "hs_server").context("awing URL missing hs_server")?;
-    let qv = extract_qv_param(awing_url).context("awing URL missing Qv")?;
+    let hs_server = query_param(awing_url, "hs_server")?;
+    let qv = extract_qv_param(awing_url)?;
 
     let (port, post_path) = parse_highland_script_params(form_html);
     let login_url = format!("http://{}:{}{}", hs_server, port, post_path);
@@ -105,7 +108,11 @@ async fn post_hslogin(client: &Client, login_url: &str, hs_server: &str, qv: &st
         .context("hslogin POST failed")?;
 
     if !response.status().is_success() {
-        bail!("hslogin returned status {}", response.status());
+        return Err(StrategyError::UnexpectedStatus {
+            endpoint: "hslogin",
+            status: response.status(),
+        }
+        .into());
     }
 
     info!("hslogin succeeded (status {})", response.status());

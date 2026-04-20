@@ -1,5 +1,5 @@
 [package]
-name = "keep_wimesh_session"
+name = "captive_portal"
 version = "0.1.4"
 edition = "2024"
 

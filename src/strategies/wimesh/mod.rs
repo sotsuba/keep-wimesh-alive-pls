@@ -8,11 +8,14 @@ const HOTSPOT_CONFIG_URL: &str = "http://free.wi-mesh.vn/config.json";
 const HOTSPOT_LOGIN_URL: &str = "http://free.wi-mesh.vn/login";
 const FALLBACK_SERVER: &str = "https://ex.login.net.vn";
 
-use super::utils::{AWING_ORIGIN, AWING_REFERER, call_verify_url, load_awing_portal, run_step};
+use super::awing_utils::{
+    AWING_ORIGIN, AWING_REFERER, call_verify_url, load_awing_portal, run_step,
+};
+use crate::strategies::error::StrategyError;
 use crate::strategies::wimesh::parse::{
     build_wifi_info_for_check, parse_login_form, parse_wifi_info,
 };
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use reqwest::cookie::Jar;
 use reqwest::header::{HeaderValue, ORIGIN, REFERER};
 use reqwest::{Client, StatusCode};
@@ -20,27 +23,19 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 use tracing::{info, warn};
 
-pub struct KtxWiMeshStrategy {
+#[derive(Default)]
+pub struct WiMeshStrategy {
     jar: Arc<Jar>,
 }
 
 pub static REGISTRY_ENTRY: super::RegistryStrategy = crate::strategies::RegistryStrategy {
-    name: "KTX Wi-MESH",
+    name: "VNU-HCM Dormitory Zone B Wi-MESH",
     predicate: |ssid| ssid.contains("Free Wi-MESH"),
-    factory: |_platform| Ok(Box::new(KtxWiMeshStrategy::new())),
+    factory: |_platform| Ok(Box::new(WiMeshStrategy::default())),
 };
 
-impl KtxWiMeshStrategy {
-    #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
-        Self {
-            jar: Arc::new(Jar::default()),
-        }
-    }
-}
-
 #[async_trait::async_trait]
-impl LoginStrategy for KtxWiMeshStrategy {
+impl LoginStrategy for WiMeshStrategy {
     async fn login(&self, client: &Client) -> Result<()> {
         let wifi = run_step(
             "step1+2: probe hotspot and load login page",
@@ -194,12 +189,18 @@ async fn call_api_connect_check(client: &Client, body: &Value, jar: &Jar) -> Res
         }
     }
 
-    let payload = check_payload.context("api-connect/check failed on all servers")?;
+    let payload = check_payload.ok_or(StrategyError::AllServersFailed {
+        operation: "api-connect/check",
+    })?;
+
     let awing_url = payload
         .pointer("/data/url")
         .and_then(Value::as_str)
         .map(ToOwned::to_owned)
-        .context("api-connect/check missing data.url")?;
+        .ok_or_else(|| StrategyError::MissingField {
+            field: "data.url".to_string(),
+            location: "api-connect/check response",
+        })?;
 
     // Inject the fresh token so the final POST to free.wi-mesh.vn sends it automatically.
     if let Some(token) = payload.pointer("/data/token").and_then(Value::as_str) {
@@ -228,7 +229,11 @@ async fn post_login(client: &Client, username: &str, password: &str, dst: &str) 
         .context("final hotspot login POST failed")?;
 
     if !response.status().is_success() {
-        bail!("hotspot login returned status {}", response.status());
+        return Err(StrategyError::UnexpectedStatus {
+            endpoint: "hotspot login",
+            status: response.status(),
+        }
+        .into());
     }
 
     let body = response

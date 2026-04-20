@@ -1,7 +1,9 @@
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result};
 use regex::Regex;
 use serde_json::{Value, json};
 use std::sync::LazyLock;
+
+use crate::strategies::error::StrategyError;
 
 static RE_WIFI_INFO: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"const\s+wifiInfo\s*=\s*(\{.*?\})\s*;"#).unwrap());
@@ -37,7 +39,10 @@ fn extract_wifi_info_json(html: &str) -> Result<String> {
     let object_literal = RE_WIFI_INFO
         .captures(html)
         .and_then(|c| c.get(1).map(|m| m.as_str().to_owned()))
-        .context("could not locate wifiInfo object in hotspot HTML")?;
+        .ok_or_else(|| StrategyError::Parse {
+            location: "hotspot HTML",
+            detail: "could not locate wifiInfo object".to_string(),
+        })?;
 
     // wifiInfo contains JS octal escapes like \052 in CHAP fields. JSON does not allow
     // octal escapes, so preserve them as literal text by doubling the slash.
@@ -58,7 +63,10 @@ pub fn parse_wifi_info(html: &str) -> Result<WifiInfo> {
         src.get(k)
             .and_then(Value::as_str)
             .map(ToOwned::to_owned)
-            .ok_or_else(|| anyhow!("wifiInfo missing key: {k}"))
+            .ok_or_else(|| StrategyError::MissingField {
+                field: k.to_string(),
+                location: "wifiInfo",
+            })
     };
 
     Ok(WifiInfo {
@@ -91,7 +99,13 @@ pub fn parse_login_form(html: &str) -> Result<(String, String, String)> {
     let extract = |re: &Regex, field: &str| -> Result<String> {
         re.captures(html)
             .and_then(|c| c.get(1).map(|m| m.as_str().to_string()))
-            .ok_or_else(|| anyhow!("contentAuthenForm missing input field: {field}"))
+            .ok_or_else(|| {
+                StrategyError::MissingField {
+                    field: field.to_string(),
+                    location: "contentAuthenForm",
+                }
+                .into()
+            })
     };
 
     Ok((

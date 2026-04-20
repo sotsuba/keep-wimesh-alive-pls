@@ -1,24 +1,19 @@
 use anyhow::Result;
-use reqwest::{Client, redirect::Policy};
+use reqwest::Client;
 use std::time::Duration;
 use tokio::sync::watch;
 use tracing::{info, warn};
 
-use crate::USER_AGENT_FIREFOX;
 use crate::cli::WatchArgs;
 use crate::platform::Platform;
-use crate::strategies::session::LoginSession;
+use crate::strategies::client::{LoginSession, build_client};
 
 pub async fn run(platform: &dyn Platform, args: &WatchArgs) -> Result<()> {
     let mut shutdown = make_shutdown_channel();
     let _lock = platform.acquire_lock()?;
     info!(check_url = %args.check_url, "watchdog started");
 
-    let probe_client = Client::builder()
-        .timeout(Duration::from_secs(4))
-        .redirect(Policy::none())
-        .user_agent(USER_AGENT_FIREFOX)
-        .build()?;
+    let probe_client = build_client(None)?;
 
     let mut login_fail_count: u32 = 0;
 
@@ -44,7 +39,7 @@ pub async fn run(platform: &dyn Platform, args: &WatchArgs) -> Result<()> {
         };
 
         info!(ssid, "connectivity lost; re-authenticating");
-        match do_login(platform, &ssid).await {
+        match LoginSession::for_ssid(&ssid, platform)?.login().await {
             Ok(_) => {
                 login_fail_count = 0;
                 info!(ssid, "login succeeded");
@@ -94,17 +89,13 @@ async fn sleep_or_shutdown(duration: Duration, shutdown: &mut watch::Receiver<bo
     }
 }
 
-async fn check_204(client: &Client, url: &str) -> bool {
+pub async fn check_204(client: &Client, url: &str) -> bool {
     client
         .get(url)
         .send()
         .await
         .map(|r| r.status().as_u16() == 204)
         .unwrap_or(false)
-}
-
-async fn do_login(platform: &dyn Platform, ssid: &str) -> Result<()> {
-    LoginSession::for_ssid(ssid, platform)?.login().await
 }
 
 fn next_backoff(fail_count: u32, base_secs: u64, max_secs: u64) -> Duration {
