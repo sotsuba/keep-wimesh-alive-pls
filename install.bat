@@ -1,3 +1,9 @@
+<# : batch portion
+@echo off
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~f0" %*
+exit /b %ERRORLEVEL%
+: end batch / begin PowerShell #>
+
 #Requires -Version 5.1
 <#
 .SYNOPSIS
@@ -5,17 +11,17 @@
 
 .DESCRIPTION
     This script deploys the captive_portal binary to the user's local AppData
-    directory and registers a Scheduled Task. 
+    directory and registers a Scheduled Task.
 
     Self-elevation is handled automatically if the script is not run as Administrator,
     while preserving the original standard user's context (profile paths and username).
 
 .EXAMPLE
-    .\install.ps1
+    .\install.bat
     Installs or updates the binary and scheduled task.
 
 .EXAMPLE
-    .\install.ps1 -Uninstall
+    .\install.bat -Uninstall
     Stops the task, unregisters it, and removes the deployed files.
 #>
 
@@ -36,7 +42,7 @@ $isAdministrator = ([Security.Principal.WindowsPrincipal][Security.Principal.Win
 
 if (-not $isAdministrator) {
     Write-Host "Requesting administrative privileges..." -ForegroundColor Cyan
-    
+
     # Pass standard user context explicitly to the elevated process
     $argList = @(
         "-NoProfile",
@@ -46,7 +52,7 @@ if (-not $isAdministrator) {
         "-TargetLocalAppData `"$TargetLocalAppData`""
     )
     if ($Uninstall) { $argList += "-Uninstall" }
-    
+
     try {
         Start-Process powershell.exe -Verb RunAs -ArgumentList ($argList -join ' ') -WorkingDirectory $PSScriptRoot
     } catch {
@@ -122,7 +128,7 @@ try {
     if ($existingTask) {
         Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
     }
-    
+
     $process = Get-Process -Name $BinaryBaseName -ErrorAction SilentlyContinue
     if ($process) {
         $process | Stop-Process -Force
@@ -138,7 +144,7 @@ try {
 
     # Define Task Components
     $action = New-ScheduledTaskAction -Execute $BinaryDest -Argument "watch"
-    
+
     $triggerLogon = New-ScheduledTaskTrigger -AtLogOn
     $triggerNet = New-CimInstance -Namespace "Root/Microsoft/Windows/TaskScheduler" `
         -ClassName "MSFT_TaskEventTrigger" `
@@ -175,7 +181,7 @@ try {
     if ($existingTask) {
         Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
     }
-    
+
     Register-ScheduledTask -TaskName $TaskName -InputObject $taskDef | Out-Null
     Write-Step "Scheduled task '$TaskName' registered (Triggers: Logon, Network Connect)."
 
